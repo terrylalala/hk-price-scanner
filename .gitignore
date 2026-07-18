@@ -1,0 +1,30 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files (NEVER commit secrets)
+# Deliberately broad: ".env*.local" alone misses things like
+# ".env.local.backup-1234", which still contain live credentials.
+.env*
+!.env.local.example
+
+# typescript
+next-env.d.ts
+*.tsbuildinfo

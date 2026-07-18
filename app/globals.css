@@ -1,0 +1,12 @@
+/* Placeholder. The full cream/serif design system lands with the UI task. */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  background: #f7f3ec;
+  color: #2b2724;
+  -webkit-text-size-adjust: 100%;
+}
