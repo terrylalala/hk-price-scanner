@@ -29,6 +29,7 @@ const SYSTEM_PROMPT = `You are a Hong Kong shopping researcher. Given a product,
 Rules:
 - Hong Kong retailers and HK dollars only. If you can only find overseas prices, say so rather than converting them and presenting the result as an HK price.
 - Only report a price you actually saw in a search result. Never estimate, average, or infer a price. Fewer real prices beats more invented ones.
+- If the product name is too generic to identify one specific model — "ASUS Laptop", "Samsung TV", "Bluetooth headphones" — then STOP. Do not choose a plausible specific model and price that instead. Return {"quotes":[]} and explain in the prose that a model number is needed, naming what to look for on the shelf label. Pricing a guessed model is the single worst thing you can do here: it produces a confident verdict about a product the shopper is not looking at.
 - Prefer the product's exact model. If you can only find a different variant or model, say which in the "note" field.
 - Include the seller's name as shoppers know it (e.g. "Fortress", "Broadway", "HKTVmall", "Price.com.hk listing").
 - If the seller has a known Hong Kong district or the listing names one, put it in "district"; otherwise "".
@@ -70,8 +71,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing 'name'." }, { status: 400 });
   }
 
-  const descriptor = [body.brand, name, body.model]
-    .filter((s) => typeof s === "string" && s.trim())
+  // /api/identify returns a `name` that usually already embeds the brand and
+  // model ("Sony WH-1000XM5 Wireless Headphones"), so appending both blindly
+  // produced "Sony Sony WH-1000XM5 Wireless Headphones WH-1000XM5". Only add a
+  // part the name does not already carry.
+  const brand = typeof body.brand === "string" ? body.brand.trim() : "";
+  const model = typeof body.model === "string" ? body.model.trim() : "";
+  const lowerName = name.toLowerCase();
+  const descriptor = [
+    brand && !lowerName.includes(brand.toLowerCase()) ? brand : "",
+    name,
+    model && !lowerName.includes(model.toLowerCase()) ? model : "",
+  ]
+    .filter(Boolean)
     .join(" ");
 
   const askedPrice =

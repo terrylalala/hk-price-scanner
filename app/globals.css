@@ -1,4 +1,20 @@
-/* Placeholder. The full cream/serif design system lands with the UI task. */
+/* Cream/serif design system. Mobile-first; the app is used one-handed in a shop. */
+
+:root {
+  --bg: #f7f3ec;
+  --surface: #fffdf9;
+  --ink: #2b2724;
+  --ink-soft: #6b625a;
+  --ink-faint: #9a9088;
+  --line: #e4dbcf;
+  --accent: #7a5c3e;
+  --good: #3f6b47;
+  --warn: #8a5a2b;
+  --bad: #9b4033;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(43, 39, 36, 0.05), 0 4px 16px rgba(43, 39, 36, 0.06);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -6,7 +22,351 @@
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
-  background: #f7f3ec;
-  color: #2b2724;
+  background: var(--bg);
+  color: var(--ink);
   -webkit-text-size-adjust: 100%;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  font-family: ui-serif, Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+h2 {
+  font-size: 1.2rem;
+}
+h3 {
+  font-size: 1.05rem;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* ---------- layout ---------- */
+
+.shell {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.masthead {
+  text-align: center;
+  padding: 8px 0 20px;
+}
+
+.masthead p {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.center {
+  text-align: center;
+}
+
+/* ---------- capture ---------- */
+
+.camera {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 2.2rem;
+  line-height: 1;
+  cursor: pointer;
+  margin-bottom: 14px;
+  transition: transform 0.12s ease;
+}
+
+.camera:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.camera:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.preview {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  display: block;
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fffdf9;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.btn:active:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn.block {
+  display: block;
+  width: 100%;
+}
+
+.btn.alt {
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn.quiet {
+  background: transparent;
+  color: var(--ink-soft);
+  border-color: var(--line);
+}
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-row > * {
+  flex: 1;
+}
+
+/* ---------- form ---------- */
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.field span {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+}
+
+.field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.field input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.field-row {
+  display: flex;
+  gap: 10px;
+}
+
+.field-row > * {
+  flex: 1;
+}
+
+/* ---------- quotes ---------- */
+
+.quote {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.quote:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.quote-store {
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--ink);
+  border-bottom: 1px solid var(--accent);
+}
+
+.quote-meta {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  margin-top: 3px;
+}
+
+.quote-price {
+  font-family: ui-serif, Georgia, serif;
+  font-size: 1.1rem;
+  white-space: nowrap;
+}
+
+.cheapest .quote-price {
+  color: var(--good);
+  font-weight: 600;
+}
+
+/* ---------- verdict ---------- */
+
+.verdict {
+  text-align: center;
+  padding: 18px 16px;
+}
+
+.verdict-label {
+  font-family: ui-serif, Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.verdict.good .verdict-label {
+  color: var(--good);
+}
+.verdict.fair .verdict-label {
+  color: var(--warn);
+}
+.verdict.poor .verdict-label {
+  color: var(--bad);
+}
+
+.verdict p {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  margin-top: 6px;
+}
+
+/* ---------- misc ---------- */
+
+.note {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.warning {
+  background: #fdf4e6;
+  border: 1px solid #ecd9b8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.83rem;
+  color: var(--warn);
+}
+
+.error {
+  background: #fbecea;
+  border: 1px solid #eccdc7;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.87rem;
+  color: var(--bad);
+}
+
+.summary {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.summary p + p {
+  margin-top: 8px;
+}
+
+.citations {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+}
+
+.citations li {
+  margin-bottom: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disclaimer {
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  text-align: center;
+  line-height: 1.45;
+  padding: 4px 8px;
+}
+
+/* Google's Search Suggestions markup ships its own styling; give it room and
+   let it size itself. Rendering it is required by the Gemini API terms. */
+.search-suggestions {
+  overflow-x: auto;
+}
+
+.spinner {
+  width: 26px;
+  height: 26px;
+  margin: 0 auto 12px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+  .camera {
+    transition: none;
+  }
 }

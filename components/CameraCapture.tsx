@@ -89,7 +89,14 @@ export default function CameraCapture({
         📷
       </button>
       <h3>Scan a product</h3>
-      <p>Photograph the item and its price tag</p>
+      {/*
+        Aim the user at the spec card, not the product. In a HK electronics shop
+        the model number lives on the small printed card beside the item — a
+        photo of the laptop itself structurally cannot yield a SKU, and without a
+        SKU the price search prices some other variant. Tested against a real
+        Mong Kok shelf: the product-first framing returned "ASUS Laptop".
+      */}
+      <p>Get close to the printed spec card — the model number matters more than the product</p>
       <button
         className="btn block alt"
         disabled={disabled}
