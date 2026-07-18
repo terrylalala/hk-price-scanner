@@ -161,6 +161,28 @@ the data is least verifiable" would be an unpleasant pattern if it holds.
 - When deploying: Vercel's "Redeploy" re-runs the **same commit**. Verify the
   deployed commit SHA — a 200 from a health check proves nothing about what is live.
 
+## Open work, roughly in order
+
+The task list from the originating session does not survive into a new one, so
+it is written out here.
+
+1. **Re-test identification on a real shelf** with the spec-card framing. This is
+   the go/no-go: finding #1 is unresolved until a real photo yields a usable model
+   number. Everything below assumes it does.
+2. Retry `/api/prices` once when `grounded` comes back false, so an ungrounded
+   recollection can't reach the UI (finding #2).
+3. Decide the district filter's fate (finding #3) — recommend demoting it to an
+   online/in-store split plus a manually-set home district.
+4. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
+5. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
+6. `/api/advice` buying-advice route.
+7. Create the **public** GitHub repo (see the repo section above).
+8. Neon database + Vercel project, then verify the deployed commit SHA.
+
+The plan file referenced at the top predates the real-photo testing. Where it and
+this document disagree, **this document is newer** — in particular the plan still
+assumes a district filter worth building and a repo that might be private.
+
 ## Running it
 
 ```bash
