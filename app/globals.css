@@ -426,12 +426,25 @@ a {
 }
 
 .cropper-viewport img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  max-width: none; /* the reset's max-width:100% would fight the transform */
+  max-width: none; /* the reset's max-width:100% would fight the fitted size */
   user-select: none;
   -webkit-user-drag: none;
+  pointer-events: none; /* drags belong to the viewport, not the image */
+}
+
+/* Dimming outside the selection. Four panels rather than one overlay with a
+   hole punched in it — no clip-path needed. */
+.crop-shade {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.62);
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 
 /* ---------- full-size photo viewer ---------- */

@@ -4,22 +4,40 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CapturedImage, encodeCapture } from "./CameraCapture";
 
 /**
- * Pinch/drag to pick ONE product out of a crowded shelf photo.
+ * Drag a box around ONE product to pick it out of a crowded shelf photo.
  *
  * This exists because of the oldest unfixed failure in the app: a photo of a
  * shelf carrying fifty products and fifty price tags gives the model no way to
- * know which one you meant, so it answers about whichever it finds first, or
- * pairs one product's name with another's price. Adding more photos does not
- * help — it was tried. Removing the competing labels does.
+ * know which one you meant. Measured on a real shoe wall — whole shelf returned
+ * the wrong shoe at another shoe's price with `modelVerbatim: false` and 0.8
+ * confidence; a crop returned the right one, read verbatim, at 0.95.
+ *
+ * One finger, one rectangle. Dragging again discards the previous box, so a
+ * mis-drag needs no undo button — you just draw it again.
  *
  * The crop is taken from `sourceFile` (the untouched camera original) whenever
- * it is available, NOT from the 1600px working copy. See CapturedImage for why
- * that distinction decides whether this feature helps or hurts.
+ * available, NOT the 1600px working copy. That is also what makes drawing on a
+ * small preview viable: the image is fitted to roughly a tenth of its size, so
+ * a fingertip-sized box is still several hundred real pixels.
  */
 
 /** Longest side of the produced crop. Matches the capture path. */
 const OUT_DIM = 1600;
-const MAX_SCALE = 8;
+/** Ignore drags this small (viewport px) — they are taps, not selections. */
+const MIN_DRAG = 16;
+/**
+ * Below this many pixels on the long side of the SOURCE region, printed price
+ * digits stop surviving the JPEG round trip. Warned about rather than blocked:
+ * a soft crop of the right product still beats a sharp crop of the wrong one.
+ */
+const SOFT_BELOW = 220;
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export default function PhotoCropper({
   image,
@@ -34,23 +52,27 @@ export default function PhotoCropper({
   const imgRef = useRef<HTMLImageElement | null>(null);
 
   const [src, setSrc] = useState<string>(image.dataUrl);
-  /** True when we are working from the 1600px copy, not the original. */
+  /** True when working from the 1600px copy, not the original. */
   const [degraded, setDegraded] = useState(false);
-  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Transform state. `fit` is the scale at which the whole image is contained
-  // in the viewport; `scale` multiplies it, and tx/ty position the image's
-  // top-left corner in viewport coordinates.
+  /** Rendered geometry of the image inside the viewport. */
   const [fit, setFit] = useState(1);
-  const [scale, setScale] = useState(1);
-  const [tx, setTx] = useState(0);
-  const [ty, setTy] = useState(0);
+  const [offX, setOffX] = useState(0);
+  const [offY, setOffY] = useState(0);
+
+  /** The selection, in viewport coordinates. Null until something is drawn. */
+  const [rect, setRect] = useState<Rect | null>(null);
+  const drag = useRef<{ active: boolean; x0: number; y0: number }>({
+    active: false,
+    x0: 0,
+    y0: 0,
+  });
 
   /**
    * Prefer the original file. It is not serialisable, so it is absent after a
-   * reload restored this scan from sessionStorage; the 1600px copy still works,
-   * it just cannot be zoomed as far usefully.
+   * reload restored this scan from sessionStorage; the working copy still
+   * crops, it is just softer when the box is small.
    */
   useEffect(() => {
     if (!image.sourceFile) {
@@ -63,19 +85,16 @@ export default function PhotoCropper({
     return () => URL.revokeObjectURL(url);
   }, [image.sourceFile]);
 
-  /** Centre the image at contain-scale once both it and the viewport are sized. */
+  /** Fit the image inside the viewport and record where it landed. */
   const layout = useCallback(() => {
     const vp = viewportRef.current;
     const img = imgRef.current;
     if (!vp || !img || !img.naturalWidth) return;
-    const vw = vp.clientWidth;
-    const vh = vp.clientHeight;
-    const f = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
+    const f = Math.min(vp.clientWidth / img.naturalWidth, vp.clientHeight / img.naturalHeight);
     setFit(f);
-    setScale(1);
-    setTx((vw - img.naturalWidth * f) / 2);
-    setTy((vh - img.naturalHeight * f) / 2);
-    setReady(true);
+    setOffX((vp.clientWidth - img.naturalWidth * f) / 2);
+    setOffY((vp.clientHeight - img.naturalHeight * f) / 2);
+    setRect(null); // a resize invalidates a box drawn against the old geometry
   }, []);
 
   useEffect(() => {
@@ -83,168 +102,67 @@ export default function PhotoCropper({
     return () => window.removeEventListener("resize", layout);
   }, [layout]);
 
-  /**
-   * Keep the image covering the viewport once zoomed in, and centred when it is
-   * smaller than the viewport. Without this you can drag the photo off screen
-   * and crop empty space.
-   */
-  const clamp = useCallback(
-    (nx: number, ny: number, s: number) => {
-      const vp = viewportRef.current;
-      const img = imgRef.current;
-      if (!vp || !img) return { x: nx, y: ny };
-      const vw = vp.clientWidth;
-      const vh = vp.clientHeight;
-      const w = img.naturalWidth * fit * s;
-      const h = img.naturalHeight * fit * s;
-      const x = w <= vw ? (vw - w) / 2 : Math.min(0, Math.max(vw - w, nx));
-      const y = h <= vh ? (vh - h) / 2 : Math.min(0, Math.max(vh - h, ny));
-      return { x, y };
-    },
-    [fit],
-  );
+  // ---- drawing ------------------------------------------------------------
 
-  // ---- gestures -----------------------------------------------------------
-  // Touch events rather than pointer events, because a two-finger pinch is the
-  // primary gesture here and touches are what report both points natively.
-
-  const gesture = useRef<{
-    mode: "none" | "pan" | "pinch";
-    startX: number;
-    startY: number;
-    startTx: number;
-    startTy: number;
-    startDist: number;
-    startScale: number;
-    midX: number;
-    midY: number;
-  }>({
-    mode: "none",
-    startX: 0,
-    startY: 0,
-    startTx: 0,
-    startTy: 0,
-    startDist: 0,
-    startScale: 1,
-    midX: 0,
-    midY: 0,
-  });
-
-  // React's TouchList differs from the DOM's (no iterator), so take the type
-  // from React's synthetic event rather than the global.
-  function distance(t: React.TouchList) {
-    const dx = t[0].clientX - t[1].clientX;
-    const dy = t[0].clientY - t[1].clientY;
-    return Math.hypot(dx, dy);
+  function pointIn(e: { clientX: number; clientY: number }) {
+    const r = viewportRef.current?.getBoundingClientRect();
+    return r ? { x: e.clientX - r.left, y: e.clientY - r.top } : { x: 0, y: 0 };
   }
 
-  function onTouchStart(e: React.TouchEvent) {
-    const g = gesture.current;
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (e.touches.length === 2 && rect) {
-      g.mode = "pinch";
-      g.startDist = distance(e.touches);
-      g.startScale = scale;
-      g.startTx = tx;
-      g.startTy = ty;
-      g.midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
-      g.midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
-    } else if (e.touches.length === 1) {
-      g.mode = "pan";
-      g.startX = e.touches[0].clientX;
-      g.startY = e.touches[0].clientY;
-      g.startTx = tx;
-      g.startTy = ty;
-    }
+  function begin(p: { x: number; y: number }) {
+    drag.current = { active: true, x0: p.x, y0: p.y };
+    // Clear immediately, so a new drag visibly replaces the old box rather than
+    // appearing to add a second one.
+    setRect(null);
   }
 
-  function onTouchMove(e: React.TouchEvent) {
-    const g = gesture.current;
-    if (g.mode === "pinch" && e.touches.length === 2) {
-      const ratio = distance(e.touches) / (g.startDist || 1);
-      const s = Math.min(MAX_SCALE, Math.max(1, g.startScale * ratio));
-      // Zoom about the pinch midpoint, so the detail under your fingers stays
-      // under your fingers instead of drifting to a corner.
-      const k = s / g.startScale;
-      const nx = g.midX - (g.midX - g.startTx) * k;
-      const ny = g.midY - (g.midY - g.startTy) * k;
-      const c = clamp(nx, ny, s);
-      setScale(s);
-      setTx(c.x);
-      setTy(c.y);
-    } else if (g.mode === "pan" && e.touches.length === 1) {
-      const nx = g.startTx + (e.touches[0].clientX - g.startX);
-      const ny = g.startTy + (e.touches[0].clientY - g.startY);
-      const c = clamp(nx, ny, scale);
-      setTx(c.x);
-      setTy(c.y);
-    }
+  function extend(p: { x: number; y: number }) {
+    if (!drag.current.active) return;
+    const { x0, y0 } = drag.current;
+    setRect({
+      x: Math.min(x0, p.x),
+      y: Math.min(y0, p.y),
+      w: Math.abs(p.x - x0),
+      h: Math.abs(p.y - y0),
+    });
   }
 
-  function onTouchEnd() {
-    gesture.current.mode = "none";
+  function end() {
+    drag.current.active = false;
+    // Discard accidental taps rather than leaving a one-pixel selection that
+    // "Use this" would happily act on.
+    setRect((r) => (r && (r.w < MIN_DRAG || r.h < MIN_DRAG) ? null : r));
   }
 
-  /** Desktop: wheel to zoom about the cursor, drag to pan. */
-  function onWheel(e: React.WheelEvent) {
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const s = Math.min(MAX_SCALE, Math.max(1, scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const k = s / scale;
-    const c = clamp(cx - (cx - tx) * k, cy - (cy - ty) * k, s);
-    setScale(s);
-    setTx(c.x);
-    setTy(c.y);
+  // ---- source geometry ----------------------------------------------------
+
+  /** The selection in SOURCE pixels, clamped to the image. */
+  function sourceRect(): Rect | null {
+    const img = imgRef.current;
+    if (!img || !rect || !fit) return null;
+    const x = Math.max(0, (rect.x - offX) / fit);
+    const y = Math.max(0, (rect.y - offY) / fit);
+    const w = Math.min(img.naturalWidth - x, rect.w / fit);
+    const h = Math.min(img.naturalHeight - y, rect.h / fit);
+    return w > 1 && h > 1 ? { x, y, w, h } : null;
   }
 
-  const dragging = useRef(false);
-  function onMouseDown(e: React.MouseEvent) {
-    dragging.current = true;
-    gesture.current.startX = e.clientX;
-    gesture.current.startY = e.clientY;
-    gesture.current.startTx = tx;
-    gesture.current.startTy = ty;
-  }
-  function onMouseMove(e: React.MouseEvent) {
-    if (!dragging.current) return;
-    const g = gesture.current;
-    const c = clamp(
-      g.startTx + (e.clientX - g.startX),
-      g.startTy + (e.clientY - g.startY),
-      scale,
-    );
-    setTx(c.x);
-    setTy(c.y);
-  }
-  function onMouseUp() {
-    dragging.current = false;
-  }
-
-  // ---- output -------------------------------------------------------------
+  const sr = sourceRect();
+  const soft = !!sr && Math.max(sr.w, sr.h) < SOFT_BELOW;
 
   function confirm() {
-    const vp = viewportRef.current;
     const img = imgRef.current;
-    if (!vp || !img) return;
+    const r = sourceRect();
+    if (!img || !r) return;
     setBusy(true);
     try {
-      const eff = fit * scale; // displayed pixels per source pixel
-
-      // The viewport shows exactly this rectangle of the source image.
-      const sx = Math.max(0, -tx / eff);
-      const sy = Math.max(0, -ty / eff);
-      const sw = Math.min(img.naturalWidth - sx, vp.clientWidth / eff);
-      const sh = Math.min(img.naturalHeight - sy, vp.clientHeight / eff);
-
       const out = document.createElement("canvas");
-      const outScale = Math.min(1, OUT_DIM / Math.max(sw, sh));
-      out.width = Math.max(1, Math.round(sw * outScale));
-      out.height = Math.max(1, Math.round(sh * outScale));
+      const s = Math.min(1, OUT_DIM / Math.max(r.w, r.h));
+      out.width = Math.max(1, Math.round(r.w * s));
+      out.height = Math.max(1, Math.round(r.h * s));
       const ctx = out.getContext("2d");
       if (!ctx) return;
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, out.width, out.height);
+      ctx.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);
 
       const { base64, dataUrl, thumbBase64 } = encodeCapture(out);
       onCrop({
@@ -267,8 +185,8 @@ export default function PhotoCropper({
         <button className="btn quiet small" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <span className="cropper-title">Zoom to one product</span>
-        <button className="btn small" onClick={confirm} disabled={busy || !ready}>
+        <span className="cropper-title">Draw a box around one product</span>
+        <button className="btn small" onClick={confirm} disabled={busy || !sr}>
           {busy ? "Working…" : "Use this"}
         </button>
       </div>
@@ -276,45 +194,77 @@ export default function PhotoCropper({
       <div
         className="cropper-viewport"
         ref={viewportRef}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        onWheel={onWheel}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        onTouchStart={(e) => begin(pointIn(e.touches[0]))}
+        onTouchMove={(e) => extend(pointIn(e.touches[0]))}
+        onTouchEnd={end}
+        onMouseDown={(e) => begin(pointIn(e))}
+        onMouseMove={(e) => extend(pointIn(e))}
+        onMouseUp={end}
+        onMouseLeave={end}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
           src={src}
-          alt="Pinch to zoom to the product you mean"
+          alt="Draw a box around the product you mean"
           onLoad={layout}
           draggable={false}
           style={{
-            transformOrigin: "0 0",
-            transform: `translate(${tx}px, ${ty}px) scale(${fit * scale})`,
-            width: imgRef.current?.naturalWidth ?? undefined,
-            visibility: ready ? "visible" : "hidden",
+            position: "absolute",
+            left: offX,
+            top: offY,
+            width: (imgRef.current?.naturalWidth ?? 0) * fit || undefined,
+            height: (imgRef.current?.naturalHeight ?? 0) * fit || undefined,
           }}
         />
+
+        {/* Four panels dimming everything outside the box, rather than one
+            overlay with a hole — no clip-path, and it degrades to plain
+            rectangles everywhere. */}
+        {rect && (
+          <>
+            <div className="crop-shade" style={{ left: 0, top: 0, right: 0, height: rect.y }} />
+            <div
+              className="crop-shade"
+              style={{ left: 0, top: rect.y + rect.h, right: 0, bottom: 0 }}
+            />
+            <div
+              className="crop-shade"
+              style={{ left: 0, top: rect.y, width: rect.x, height: rect.h }}
+            />
+            <div
+              className="crop-shade"
+              style={{ left: rect.x + rect.w, top: rect.y, right: 0, height: rect.h }}
+            />
+            <div
+              className="crop-box"
+              style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
+            />
+          </>
+        )}
       </div>
 
       <div className="cropper-foot">
         {/*
           The tag is the point. On a shoe wall each price card sits BELOW its
-          product, so a crop tight on the product alone trades "wrong product"
+          product, so a box tight on the product alone trades "wrong product"
           for "no price" — which is not an improvement.
         */}
         <p className="note">
-          Pinch to zoom, drag to position. <strong>Include the price tag</strong>,
-          not just the product.
+          {sr
+            ? `Selected ${Math.round(sr.w)}×${Math.round(sr.h)}px. Drag again to redraw.`
+            : "Drag one finger around the product AND its price tag."}
         </p>
+        {soft && (
+          <p className="note" style={{ marginTop: 6, color: "#e8b0b0" }}>
+            That box is small — the price may come out too soft to read. Try
+            drawing it a bit larger.
+          </p>
+        )}
         {degraded && (
           <p className="note" style={{ marginTop: 6, opacity: 0.75 }}>
-            Working from the saved copy, so very tight crops will be soft.
-            Retaking the photo gives a sharper zoom.
+            Working from the saved copy, so small boxes will be soft. Retaking
+            the photo gives a sharper crop.
           </p>
         )}
       </div>

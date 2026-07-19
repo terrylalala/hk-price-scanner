@@ -576,7 +576,7 @@ function ConfirmStep({
       {photos.length > 0 && (
         <div className="card center">
           <button className="btn block alt" onClick={onZoom} disabled={busy}>
-            Wrong product? Zoom to the one you mean
+            Wrong product? Draw a box around the one you mean
           </button>
           <p className="note" style={{ marginTop: 8 }}>
             Best for shelf photos with several products and price tags.
