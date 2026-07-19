@@ -383,16 +383,25 @@ it is written out here.
    next time you are in a shop.
 2. ~~Fix the `/api/prices` duration budget~~ — **DONE.** `maxDuration` 60, 50s
    `abortSignal`, retries capped at 2, clean `504` on timeout. Both paths verified.
-3. **Decide** what to do about `/api/prices` reliability — this is a design call,
-   not a coding task, and "retry when ungrounded" is the wrong framing for it.
-   Read finding #6 first: there are **five** failure modes and a retry addresses
-   one of them, costs a second billed search, and does not fit the budget anyway
-   (successes already run 46–48s against a 50s deadline). Options: shorten the
-   first attempt's deadline to leave room; accept ungrounded results and rely on
-   the warning `app/page.tsx` already renders; or surface reliability honestly in
-   the UI. Recommendation on record: **accept and warn**, because shortening the
-   deadline would convert currently-succeeding slow searches into failures —
-   trading a rare, already-warned problem for a new common one.
+3. ~~Decide what to do about `/api/prices` reliability~~ — **DECIDED: accept and
+   warn.** No automatic retry. Rejected because a retry addresses one of five
+   failure modes (finding #6), doubles a request that already consumes 46–48s of
+   a 50s budget, and silently spends a second billed search. Shortening the first
+   attempt's deadline to make room was rejected too: it would convert
+   currently-succeeding slow searches into failures, trading a rare warned
+   problem for a common one.
+
+   Implemented as honesty plus a user-initiated retry:
+   - The empty-result copy no longer blames the user. It said "try a more
+     specific product name"; six consecutive empty runs were measured on a query
+     that worked before and after, so that advice was actively wrong. It now says
+     the search is unreliable and that retrying beats editing the name.
+   - A **Search again** button on the empty result. User-initiated, so it costs
+     no budget and hides no billed search. Verified live: an empty result
+     retried into six prices and a verdict.
+   - The 504 copy leads with "searching again often works" for the same reason.
+   - The ungrounded warning and suppressed verdict were already in place.
+
 4. ~~Gate the missing-model warning by category~~ — **DONE.** `hasModelNumbers()`
    in `app/page.tsx` is a deny-list, so it warns by default: a spurious warning is
    mild, a missed one lets the search price a different product. Verified against

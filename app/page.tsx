@@ -353,6 +353,7 @@ export default function Home() {
                   productName={draft.name}
                   tagPrice={parseFloat(draft.tagPrice)}
                   onAgain={reset}
+                  onRetry={findPrices}
                 />
               </div>
             </div>
@@ -540,11 +541,14 @@ function Results({
   productName,
   tagPrice,
   onAgain,
+  onRetry,
 }: {
   result: PriceResult;
   productName: string;
   tagPrice: number;
   onAgain: () => void;
+  /** Re-run the same search. User-initiated on purpose — see the empty branch. */
+  onRetry: () => void;
 }) {
   const { quotes, citations, searchSuggestionsHtml, summary, grounded } = result;
   const hasTag = Number.isFinite(tagPrice) && tagPrice > 0;
@@ -611,10 +615,37 @@ function Results({
         </p>
 
         {quotes.length === 0 ? (
-          <p className="note" style={{ marginTop: 12 }}>
-            No genuine Hong Kong prices came back. Try a more specific product
-            name, or check the model number.
-          </p>
+          /*
+            An empty result is NOT reliably the user's fault, and the old copy
+            ("try a more specific product name") said it was. The search comes
+            back empty intermittently — six consecutive empty runs were measured
+            on a query that had worked moments earlier and worked again after.
+            Sending someone off to rewrite a perfectly good product name is the
+            worst possible advice for a transient failure.
+
+            Retrying is offered as a BUTTON rather than done automatically: an
+            automatic retry doubles a request that already takes 46–48s of a 50s
+            budget, and silently spends a second billed search. Letting the
+            shopper choose costs neither.
+          */
+          <div style={{ marginTop: 12 }}>
+            <p className="note">
+              No Hong Kong prices came back. This search is unreliable and
+              sometimes returns nothing for a product it found a moment earlier,
+              so trying again is usually worth more than editing the name.
+            </p>
+            <button
+              className="btn block alt"
+              style={{ marginTop: 12 }}
+              onClick={onRetry}
+            >
+              Search again
+            </button>
+            <p className="note" style={{ marginTop: 10 }}>
+              If it stays empty, the product may genuinely not be sold online in
+              Hong Kong — or the model number needs checking.
+            </p>
+          </div>
         ) : (
           <div style={{ marginTop: 10 }}>
             {quotes.map((q, i) => (

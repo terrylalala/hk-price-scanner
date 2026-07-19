@@ -380,7 +380,7 @@ function handleError(err: unknown) {
     return NextResponse.json(
       {
         error:
-          "The price search took too long and was stopped. Try a more specific product name — broad searches take the longest.",
+          "The price search took too long and was stopped. Searching again often works — successful searches run close to the time limit, so a slow one is frequently just unlucky. If it keeps timing out, a more specific product name searches faster.",
         code: "search-timeout",
       },
       { status: 504 },
