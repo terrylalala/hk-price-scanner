@@ -63,6 +63,7 @@ Rules:
 - Only report a price you actually saw in a search result. Never estimate, average, or infer a price. Fewer real prices beats more invented ones.
 - If the product name is too generic to identify one specific model — "ASUS Laptop", "Samsung TV", "Bluetooth headphones" — then STOP. Do not choose a plausible specific model and price that instead. Return {"quotes":[]} and explain in the prose that a model number is needed, naming what to look for on the shelf label. Pricing a guessed model is the single worst thing you can do here: it produces a confident verdict about a product the shopper is not looking at.
 - Prefer the product's exact model. If you can only find a different variant or model, say which in the "note" field.
+- "exactModel" is REQUIRED on every quote and must be honest. Set it true ONLY if the listing is the same model the shopper scanned. Set it false for a different size, capacity, generation, colour-variant-with-its-own-SKU, bundle, or a similar-but-not-identical product — and name the actual listing in "note". Do not set it true because the price is close or the product looks alike. This flag decides whether the shopper is told they are overpaying, so a wrong true is worse than a cautious false.
 - Include the seller's name as shoppers know it (e.g. "Fortress", "Broadway", "HKTVmall", "Price.com.hk listing").
 - "url" must be the DIRECT PRODUCT PAGE you saw the price on, not the shop's home page. A shopper who taps it expects to land on this exact item. If you only have the home page, still give it, but never invent a product path that you did not see.
 - If the seller has a known Hong Kong district or the listing names one, put it in "district"; otherwise "".
@@ -70,7 +71,7 @@ Rules:
 Structure your reply in this order, JSON FIRST:
 
 \`\`\`json
-{"quotes":[{"store":"...","price":1234,"currency":"HKD","url":"https://...","district":"","note":""}]}
+{"quotes":[{"store":"...","price":1234,"currency":"HKD","url":"https://...","district":"","note":"","exactModel":true}]}
 \`\`\`
 
 Then, after the JSON block, a short plain-language summary for the shopper.
@@ -328,7 +329,13 @@ function parseQuotes(text: string): PriceQuote[] {
     if (!Number.isFinite(price) || price <= 0 || !store) continue;
     if (url && !/^https?:\/\//i.test(url)) continue;
 
+    // Fail closed: only a literal true (or the string "true") counts as an
+    // exact-model match. Anything missing, malformed or ambiguous means the
+    // quote cannot drive a verdict — a missing verdict beats a wrong one.
+    const exactModel = o.exactModel === true || o.exactModel === "true";
+
     out.push({
+      exactModel,
       store,
       price,
       currency: (str(o.currency) || "HKD").toUpperCase(),

@@ -455,8 +455,23 @@ function Results({
   onAgain: () => void;
 }) {
   const { quotes, citations, searchSuggestionsHtml, summary, grounded } = result;
-  const cheapest = quotes.length > 0 ? quotes[0].price : null;
   const hasTag = Number.isFinite(tagPrice) && tagPrice > 0;
+
+  /*
+    Only quotes for the SAME model may be judged against.
+
+    A D45 scan returned four prices, every one for a 米家吸頂燈450. Taking the
+    cheapest overall produced a confident red "27% more" against a different
+    product — and the official listing's own original price for that other model
+    was HK$469, the shopper's exact tag. The substitution was flagged in each
+    note, but prose cannot be acted on, so the app judged on it anyway.
+
+    Quotes stay sorted by price for display; the verdict uses the cheapest
+    EXACT-model quote, which is not necessarily the first row.
+  */
+  const exactQuotes = quotes.filter((q) => q.exactModel);
+  const cheapestExact = exactQuotes.length > 0 ? exactQuotes[0] : null;
+  const substitutedOnly = quotes.length > 0 && exactQuotes.length === 0;
 
   // Grounding is not guaranteed: the model sometimes answers a vague query from
   // memory instead of searching, returning confident prices with no citations
@@ -465,7 +480,9 @@ function Results({
   // nothing is worse than no verdict at all.
   const trustworthy = grounded && quotes.length > 0;
   const verdict =
-    trustworthy && hasTag && cheapest !== null ? verdictFor(tagPrice, cheapest) : null;
+    trustworthy && hasTag && cheapestExact
+      ? verdictFor(tagPrice, cheapestExact.price)
+      : null;
 
   return (
     <>
@@ -474,6 +491,15 @@ function Results({
           These prices came back without any web sources attached, so they may be
           from the model&rsquo;s memory rather than current listings. Treat them
           as a rough guide only and check the retailer directly.
+        </div>
+      )}
+
+      {substitutedOnly && (
+        <div className="warning">
+          <strong>No prices found for this exact model.</strong> Everything below
+          is a similar but different product, so there is no verdict — comparing
+          your shop price against them would be misleading. Check the model
+          number on the label, or use these only as a rough guide.
         </div>
       )}
 
@@ -500,7 +526,15 @@ function Results({
         ) : (
           <div style={{ marginTop: 10 }}>
             {quotes.map((q, i) => (
-              <div className={`quote ${i === 0 ? "cheapest" : ""}`} key={`${q.url}-${i}`}>
+              <div
+                /* The green "cheapest" marker follows the VERDICT, not row 0.
+                   Highlighting a cheaper substituted quote would point the
+                   shopper at the number the app just refused to judge on. */
+                className={`quote ${q === cheapestExact ? "cheapest" : ""} ${
+                  q.exactModel ? "" : "substituted"
+                }`}
+                key={`${q.url}-${i}`}
+              >
                 <div>
                   {/* Every quote is an attributed outbound link to its source —
                       never a mirrored catalogue entry. */}
@@ -516,6 +550,10 @@ function Results({
                   ) : (
                     <span className="quote-store">{q.store}</span>
                   )}
+                  {/* A substitution has to be visible at a glance. Left in the
+                      grey meta line it read as a footnote, and the app judged
+                      the shopper's price against it regardless. */}
+                  {!q.exactModel && <span className="tag-different">different model</span>}
                   {(q.district || q.note) && (
                     <div className="quote-meta">
                       {[q.district, q.note].filter(Boolean).join(" · ")}

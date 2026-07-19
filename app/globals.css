@@ -255,6 +255,27 @@ a {
   font-weight: 600;
 }
 
+/* A quote for a different model. Dimmed, because it must not read as a
+   comparable price — it cannot drive the verdict. */
+.quote.substituted .quote-store,
+.quote.substituted .quote-price {
+  color: var(--ink-faint);
+}
+
+.tag-different {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border: 1px solid #ecd9b8;
+  background: #fdf4e6;
+  color: var(--warn);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* ---------- verdict ---------- */
 
 .verdict {

@@ -37,6 +37,21 @@ export interface PriceQuote {
   district: string;
   /** e.g. "online only", "in stock", "refurbished". */
   note: string;
+  /**
+   * Whether this price is for the SAME model the shopper scanned.
+   *
+   * A search for a D45 returned four prices, all for a 米家吸頂燈450 — a
+   * different product. The model flagged every substitution in `note`, but prose
+   * cannot be acted on, so the app compared the shopper's tag against another
+   * product and told them they were overpaying by 27%.
+   *
+   * Only exact-model quotes may drive a verdict. Substituted ones still render,
+   * as context, clearly marked.
+   *
+   * Defaults to FALSE when the model omits it. Failing closed costs a missing
+   * verdict; failing open costs a confident wrong one.
+   */
+  exactModel: boolean;
 }
 
 /** A grounding source, rendered for attribution. */
