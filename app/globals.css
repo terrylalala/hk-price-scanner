@@ -373,6 +373,67 @@ a {
   flex-shrink: 0;
 }
 
+/* ---------- zoom-to-one-product cropper ---------- */
+
+.cropper {
+  position: fixed;
+  inset: 0;
+  z-index: 120; /* above the photo viewer, which it can be opened over */
+  background: #000;
+  display: flex;
+  flex-direction: column;
+}
+
+.cropper-head,
+.cropper-foot {
+  flex-shrink: 0;
+  padding: 12px 14px;
+  background: #000;
+  color: #fff;
+}
+
+.cropper-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+}
+
+.cropper-title {
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.cropper-foot {
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+}
+
+.cropper-foot .note {
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+}
+
+/* The crop is whatever this rectangle shows, so it IS the output frame.
+   `touch-action: none` stops the browser hijacking pinch as a page zoom. */
+.cropper-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  background: #111;
+}
+
+.cropper-viewport img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none; /* the reset's max-width:100% would fight the transform */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 /* ---------- full-size photo viewer ---------- */
 
 /* Fixed to the viewport and above the tab bar, so the photo is never partly

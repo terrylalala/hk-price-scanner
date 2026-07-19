@@ -18,6 +18,49 @@ export interface CapturedImage {
    * 2.5–9.6s per image, which is what made History unusable on a phone.
    */
   thumbBase64: string;
+  /**
+   * The untouched file the user picked, kept so a crop can be taken at FULL
+   * resolution rather than from the 1600px version above.
+   *
+   * This matters more than it looks. A phone shoots ~4000px; cropping one shoe
+   * out of a shelf photo can be 8% of the frame. From 1600px that leaves ~130px
+   * and the price tag is unreadable — cropping would make identification worse,
+   * not better. From the original it leaves ~320px, which is legible.
+   *
+   * A File is a cheap reference to disk, not a copy in memory, so holding it
+   * costs almost nothing. It is NOT serialisable, so it does not survive the
+   * sessionStorage round trip on reload — PhotoCropper falls back to `dataUrl`
+   * in that case and says so.
+   */
+  sourceFile?: File;
+}
+
+/**
+ * Encode a canvas as the pair of JPEGs every capture carries.
+ *
+ * Shared by the camera path and the cropper so both produce identical shapes;
+ * the thumbnail rule in particular should exist in exactly one place.
+ */
+export function encodeCapture(canvas: HTMLCanvasElement, quality = 0.92): {
+  base64: string;
+  dataUrl: string;
+  thumbBase64: string;
+} {
+  const dataUrl = canvas.toDataURL("image/jpeg", quality);
+
+  const tScale = Math.min(1, THUMB_DIM / Math.max(canvas.width, canvas.height));
+  const t = document.createElement("canvas");
+  t.width = Math.max(1, Math.round(canvas.width * tScale));
+  t.height = Math.max(1, Math.round(canvas.height * tScale));
+  const tCtx = t.getContext("2d");
+  let thumbBase64 = "";
+  if (tCtx) {
+    tCtx.drawImage(canvas, 0, 0, t.width, t.height);
+    const tUrl = t.toDataURL("image/jpeg", 0.7);
+    thumbBase64 = tUrl.slice(tUrl.indexOf(",") + 1);
+  }
+
+  return { base64: dataUrl.slice(dataUrl.indexOf(",") + 1), dataUrl, thumbBase64 };
 }
 
 /** Longest side of the stored thumbnail. ~3x the largest CSS size it is drawn
@@ -58,25 +101,8 @@ async function downscale(file: File, maxDim = 1600, quality = 0.92): Promise<Cap
   if (!ctx) throw new Error("Canvas not supported on this device.");
   ctx.drawImage(img, 0, 0, w, h);
 
-  const outUrl = canvas.toDataURL("image/jpeg", quality);
-  const base64 = outUrl.slice(outUrl.indexOf(",") + 1);
-
-  // Drawn from `img` again rather than downscaling the canvas, so the thumbnail
-  // is resampled once from the original instead of twice through a lossy JPEG.
-  // Quality 0.7 is fine at this size and roughly halves the bytes again.
-  const tScale = Math.min(1, THUMB_DIM / Math.max(img.width, img.height));
-  const tCanvas = document.createElement("canvas");
-  tCanvas.width = Math.max(1, Math.round(img.width * tScale));
-  tCanvas.height = Math.max(1, Math.round(img.height * tScale));
-  const tCtx = tCanvas.getContext("2d");
-  let thumbBase64 = "";
-  if (tCtx) {
-    tCtx.drawImage(img, 0, 0, tCanvas.width, tCanvas.height);
-    const tUrl = tCanvas.toDataURL("image/jpeg", 0.7);
-    thumbBase64 = tUrl.slice(tUrl.indexOf(",") + 1);
-  }
-
-  return { base64, mediaType: "image/jpeg", dataUrl: outUrl, thumbBase64 };
+  const { base64, dataUrl: outUrl, thumbBase64 } = encodeCapture(canvas, quality);
+  return { base64, mediaType: "image/jpeg", dataUrl: outUrl, thumbBase64, sourceFile: file };
 }
 
 export default function CameraCapture({

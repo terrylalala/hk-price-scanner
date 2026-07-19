@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import CameraCapture, { AddPhoto, CapturedImage } from "@/components/CameraCapture";
+import PhotoCropper from "@/components/PhotoCropper";
 import TabBar, { Tab } from "@/components/TabBar";
 import ScanList from "@/components/ScanList";
 import SettingsTab from "@/components/SettingsTab";
@@ -106,6 +107,8 @@ export default function Home() {
    * fabricated model number.
    */
   const [photos, setPhotos] = useState<CapturedImage[]>([]);
+  /** Whether the zoom-to-one-product cropper is open over the confirm step. */
+  const [cropping, setCropping] = useState(false);
   const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [draft, setDraft] = useState<Draft>({
     name: "",
@@ -177,7 +180,31 @@ export default function Home() {
     return identifyFrom([...photos, img]);
   }
 
-  async function identifyFrom(list: CapturedImage[]) {
+  /**
+   * Re-identify from a crop the user drew around one product.
+   *
+   * The crop REPLACES the photo set for identification rather than joining it,
+   * which is the entire point: leaving the wide shot in would put the fifty
+   * competing labels back in front of the model. The wide shot is kept as the
+   * second photo so the saved scan still shows which shelf it came from — you
+   * lose the context otherwise, and that context is what makes History useful
+   * weeks later.
+   */
+  function useCrop(crop: CapturedImage) {
+    const wide = photos[0];
+    setCropping(false);
+    return identifyFrom(wide ? [crop, wide] : [crop], [crop]);
+  }
+
+  /**
+   * @param list  every photo to keep on the scan
+   * @param sendOnly  the subset to actually show the model; defaults to `list`.
+   *   These differ only for crops: the wide shelf shot is worth STORING for
+   *   context but must not be SENT, or the competing labels the crop removed
+   *   are handed straight back.
+   */
+  async function identifyFrom(list: CapturedImage[], sendOnly?: CapturedImage[]) {
+    const send = sendOnly ?? list;
     setError("");
     setUnreadable(false);
     setPhotos(list);
@@ -187,7 +214,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          images: list.map((i) => ({ imageBase64: i.base64, mediaType: i.mediaType })),
+          images: send.map((i) => ({ imageBase64: i.base64, mediaType: i.mediaType })),
         }),
       });
       const data = await res.json();
@@ -386,12 +413,23 @@ export default function Home() {
           <ConfirmStep
             photos={photos}
             onAddPhoto={addPhoto}
+            onZoom={() => setCropping(true)}
             identity={identity}
             draft={draft}
             onChange={setDraft}
             onSubmit={findPrices}
             onCancel={reset}
             busy={phase === "searching"}
+          />
+        )}
+
+        {/* Full-screen over the confirm step. Crops the FIRST photo, which is
+            the one identification is currently based on. */}
+        {cropping && photos[0] && (
+          <PhotoCropper
+            image={photos[0]}
+            onCancel={() => setCropping(false)}
+            onCrop={useCrop}
           />
         )}
 
@@ -475,6 +513,7 @@ function Busy({ label }: { label: string }) {
 function ConfirmStep({
   photos,
   onAddPhoto,
+  onZoom,
   identity,
   draft,
   onChange,
@@ -484,6 +523,7 @@ function ConfirmStep({
 }: {
   photos: CapturedImage[];
   onAddPhoto: (img: CapturedImage) => void;
+  onZoom: () => void;
   identity: ProductIdentity;
   draft: Draft;
   onChange: (d: Draft) => void;
@@ -499,9 +539,15 @@ function ConfirmStep({
       {photos.length > 0 && (
         <div className="card">
           {/* eslint-disable-next-line @next/next/no-img-element */}
+          {/*
+            photos[0], not the newest. After a crop the crop is first, and it is
+            what identification actually used — showing the wide shelf here
+            instead invites you to check the answer against a photo the model
+            was never given.
+          */}
           <img
             className="preview"
-            src={photos[photos.length - 1].dataUrl}
+            src={photos[0].dataUrl}
             alt="The product you photographed"
           />
           {photos.length > 1 && (
@@ -522,6 +568,22 @@ function ConfirmStep({
         gone wrong, which is precisely the case it fixes: a shelf where one
         product faces several labels.
       */}
+      {/*
+        Offered before "add a photo" because on a crowded shelf it is the one
+        that works. Adding views does not tell the model which product you
+        meant; cropping removes the others from the frame entirely.
+      */}
+      {photos.length > 0 && (
+        <div className="card center">
+          <button className="btn block alt" onClick={onZoom} disabled={busy}>
+            Wrong product? Zoom to the one you mean
+          </button>
+          <p className="note" style={{ marginTop: 8 }}>
+            Best for shelf photos with several products and price tags.
+          </p>
+        </div>
+      )}
+
       {photos.length < 3 && (
         <div className="card center">
           <AddPhoto onCapture={onAddPhoto} onError={() => {}} disabled={busy} />
