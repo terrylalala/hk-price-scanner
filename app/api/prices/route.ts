@@ -110,16 +110,15 @@ const SIMILAR_SCOPE_LOCAL = `Where to look — HONG KONG ONLY:
 - The shopper is looking at this item on sale in a Hong Kong shop, with a price on it, and wants to compare it against what they would pay ELSEWHERE IN HONG KONG. Search Hong Kong retailers and Hong Kong online stores only. Do NOT return overseas listings or ships-to-Hong-Kong imports — they are not what this shopper is choosing between.
 - Hong Kong dollars only. Report every price in HKD and set "currency" to "HKD". If you can only find an overseas price, say so in the prose rather than converting it and presenting it as a Hong Kong price.`;
 
-const SIMILAR_SCOPE_GLOBAL = `Where to look — anywhere the shopper can buy FROM Hong Kong:
-- Hong Kong physical shops and local online stores.
-- Hong Kong-based resellers, agents, concept stores and buying services that import and sell here — a lot of what people buy in Hong Kong is imported and sold this way.
-- Major international stores that ship to Hong Kong. Include these: they are where Hong Kong shoppers genuinely buy, especially for anything with no local stockist. Match the sites to the kind of item:
-  - Clothing, shoes, bags, accessories: ASOS, SHEIN, Farfetch, NET-A-PORTER, YOOX, ZALORA, Uniqlo, Lane Crawford, HBX, and comparable boutiques.
-  - Health, supplements, beauty: iHerb, Watsons, Mannings, Sephora, Amazon.
-  - Electronics and general goods: HKTVmall, Fortress, Broadway, Amazon (US / Japan / UK), AliExpress, price.com.hk.
-  - Food, grocery, snacks: HKTVmall, ParknShop, Ztore, Yamibuy, Amazon.
-  These are starting points, not a whitelist — any real store that ships to Hong Kong is fair game, and a well-known local boutique is often the best answer.
-- Prices may be in the store's own currency. Report the price EXACTLY as shown and put its ISO code in "currency" (HKD, USD, GBP, JPY, EUR, CNY, KRW…). Do NOT convert to HK dollars or guess an HKD equivalent — a made-up conversion is a made-up price. When the store is outside Hong Kong, say "ships to HK" in "note" (with any obvious caveat, e.g. shipping cost or duty) so the shopper knows it is an import. If a listing plainly does not ship to Hong Kong, leave it out.`;
+const SIMILAR_SCOPE_GLOBAL = `Where to look — anywhere the shopper can buy FROM Hong Kong (local stores, Hong Kong resellers that import, or international stores that ship here):
+- This search has a STRICT TIME LIMIT. Be fast and focused: pick the 2–3 stores MOST likely to carry something like this and search those. Do NOT try to cover every store below — sweeping many stores is what makes this search time out and return nothing. A few real listings from well-chosen stores beats a wide search that never finishes.
+- Choose the stores by category. Good starting points (pick a couple, do not search them all):
+  - Clothing, shoes, bags, accessories: ASOS, Farfetch, NET-A-PORTER, ZALORA, Uniqlo.
+  - Health, supplements, beauty: iHerb, Watsons, Amazon.
+  - Electronics and general goods: HKTVmall, Fortress, Amazon.
+  - Food, grocery, snacks: HKTVmall, ParknShop, Amazon.
+  A well-known Hong Kong boutique is often the best answer, so include one where it fits.
+- Prices may be in the store's own currency. Report the price EXACTLY as shown and put its ISO code in "currency" (HKD, USD, GBP, JPY, EUR, CNY, KRW…). Do NOT convert to HK dollars or guess an HKD equivalent — a made-up conversion is a made-up price. When the store is outside Hong Kong, say "ships to HK" in "note" so the shopper knows it is an import.`;
 
 const SIMILAR_RULES = `Rules:
 - Only report an item and price you ACTUALLY SAW in a search result. Never estimate a price or invent a listing. Three real options beat ten plausible ones.
