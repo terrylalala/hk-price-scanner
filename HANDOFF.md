@@ -537,6 +537,46 @@ a shared history may be a feature ("we already priced this at HK$469"). Wait for
 someone to actually ask for separation. Revisit sooner if the app is shared
 beyond family, since a shared password cannot be revoked from one person.
 
+## Two modes now, and Treasures (20 Jul)
+
+The app only answered "is this price good?", which needs a model number and a
+price tag. Half of what the user photographs has neither — a scarf on a rail, a
+bag in a boutique — and for those the exact search is built to return NOTHING
+rather than guess. Correct, and indistinguishable from a broken app.
+
+`/api/prices` takes `mode: "exact" | "similar"`. **Separate prompts, not one
+softened prompt**, because they want opposite behaviour on the most important
+rule: the exact prompt STOPS when the product is generic (pricing a guessed
+model produces a confident verdict about the wrong item), while for similar,
+generic is the starting condition. What keeps the similar prompt honest instead
+is that it must never claim to have found the item — every result is openly
+comparable and `note` says what the listing actually is.
+
+- Mode is preselected from whether a model number exists, and **persisted**: a
+  restored session has no identification response, so without storing it a
+  reload silently reverted similar → exact, which then returns nothing.
+- Results diverge throughout: no verdict, no "different model" tags (every
+  result is a different product by definition), and the empty-state advice must
+  match the search that ran — it was telling the user to check a model number on
+  a scarf that has none.
+- Verified on the hardest case in the collection: a scarf display with no brand,
+  no model, no tag. Identification returned `modelExpected: false`, the app
+  auto-selected similar, and the search returned three real HK fabric shops at
+  HK$55/$60/$180, each with a note.
+
+**Five tabs: Scan · History · Wishlist · Treasures · Settings.** Wishlist and
+Treasures filter on genuinely different things and collapsing them loses one —
+Wishlist is `watching`, set by hand; Treasures is `mode = 'similar'`, filed
+automatically because that search is never an answer to "should I buy this now",
+only a note to come back to. Starring a Treasure puts it in both.
+
+**Known gap, deliberately not fixed yet.** Treasures is defined by the search
+mode, so anything with a legible brand — a Saint Laurent bag, a Brooks Brothers
+blazer — preselects *exact* and will not land there unless the user switches
+mode by hand. If that bites in real use, the answer is letting any scan be added
+to Treasures the way ☆ works, not inferring intent from whether a logo happened
+to be readable.
+
 ## Finding #1 is addressed: crop-to-one-product (20 Jul)
 
 The crowded-shelf failure has a fix, and it is measured rather than assumed.
