@@ -38,72 +38,26 @@ interface Draft {
   brand: string;
   model: string;
   tagPrice: string;
+  /** Units the tag price covers, as text so the field stays editable. */
+  packQuantity: string;
+}
+
+/**
+ * What one unit actually costs.
+ *
+ * The verdict, the price search and the saved scan must all use this, never the
+ * raw tag price: a real sign read "$20/3包", and comparing 20 against
+ * single-pack market prices judges the wrong number.
+ */
+function unitPrice(draft: Draft): number | null {
+  const price = parseFloat(draft.tagPrice);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const packs = parseInt(draft.packQuantity, 10);
+  const n = Number.isFinite(packs) && packs >= 1 ? packs : 1;
+  return price / n;
 }
 
 const SCAN_KEY = "price-scanner:scan";
-
-/**
- * Categories whose products carry no model number, so the missing-model warning
- * would be noise. Matched as substrings against the free-text category from
- * /api/identify (e.g. "Wine", "Voice Recorder", "Ceiling light").
- */
-const MODEL_LESS_CATEGORIES = [
-  "wine",
-  "beer",
-  "spirit",
-  "whisky",
-  "whiskey",
-  "sake",
-  "liquor",
-  "drink",
-  "beverage",
-  "juice",
-  "water",
-  "coffee",
-  "tea",
-  "food",
-  "snack",
-  "confection",
-  "chocolate",
-  "grocer",
-  "produce",
-  "fruit",
-  "vegetable",
-  "meat",
-  "seafood",
-  "supplement",
-  "vitamin",
-  "cosmetic",
-  "skincare",
-  "makeup",
-  "perfume",
-  "fragrance",
-  "shampoo",
-  "soap",
-  "detergent",
-  "clothing",
-  "apparel",
-  "shoe",
-  "book",
-  "stationery",
-];
-
-/**
- * Whether a missing model number is worth warning about for this category.
- *
- * Deliberately a DENY-list, warning by default. The two failure modes are not
- * symmetric: a spurious warning is mild noise, while a missed one lets the
- * search price a different product and produce a confident wrong verdict — the
- * bug this warning exists to prevent. So an unrecognised category still warns.
- *
- * The trigger was a bottle of wine: identification was perfect, but the warning
- * told the shopper to "add the model from the label", which does not exist.
- */
-function hasModelNumbers(category: string): boolean {
-  const c = category.trim().toLowerCase();
-  if (!c) return true;
-  return !MODEL_LESS_CATEGORIES.some((m) => c.includes(m));
-}
 
 interface SavedScan {
   photo?: CapturedImage | null;
@@ -148,6 +102,7 @@ export default function Home() {
     brand: "",
     model: "",
     tagPrice: "",
+    packQuantity: "1",
   });
   const [result, setResult] = useState<PriceResult | null>(null);
   const [restored, setRestored] = useState(false);
@@ -238,6 +193,7 @@ export default function Home() {
         brand: product.brand,
         model: product.model,
         tagPrice: product.tagPrice === null ? "" : String(product.tagPrice),
+        packQuantity: String(product.packQuantity ?? 1),
       });
       setPhase("confirm");
     } catch (err) {
@@ -249,7 +205,7 @@ export default function Home() {
   async function findPrices() {
     setError("");
     setPhase("searching");
-    const tagPrice = parseFloat(draft.tagPrice);
+    const tagPrice = unitPrice(draft);
     try {
       const res = await fetch("/api/prices", {
         method: "POST",
@@ -258,7 +214,7 @@ export default function Home() {
           name: draft.name,
           brand: draft.brand,
           model: draft.model,
-          tagPrice: Number.isFinite(tagPrice) && tagPrice > 0 ? tagPrice : null,
+          tagPrice,
         }),
       });
       const data = await res.json();
@@ -287,7 +243,9 @@ export default function Home() {
   async function saveScan(priced: PriceResult) {
     if (!identity) return;
     try {
-      const tag = parseFloat(draft.tagPrice);
+      // Stored already normalised: history holds comparable numbers, and
+      // lib/scans.ts documents that a saved scan is always packQuantity 1.
+      const tag = unitPrice(draft);
       const res = await fetch("/api/scans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -297,7 +255,7 @@ export default function Home() {
             name: draft.name,
             brand: draft.brand,
             model: draft.model,
-            tagPrice: Number.isFinite(tag) && tag > 0 ? tag : null,
+            tagPrice: tag,
           },
           district,
           quotes: priced.quotes,
@@ -321,7 +279,7 @@ export default function Home() {
     setPhoto(null);
     setIdentity(null);
     setResult(null);
-    setDraft({ name: "", brand: "", model: "", tagPrice: "" });
+    setDraft({ name: "", brand: "", model: "", tagPrice: "", packQuantity: "1" });
   }
 
   /**
@@ -423,7 +381,7 @@ export default function Home() {
                   productName={draft.name}
                   brand={draft.brand}
                   model={draft.model}
-                  tagPrice={parseFloat(draft.tagPrice)}
+                  tagPrice={unitPrice(draft) ?? NaN}
                   onAgain={reset}
                   onRetry={findPrices}
                 />
@@ -449,7 +407,7 @@ function ScanSummary({
   draft: Draft;
   onEdit: () => void;
 }) {
-  const price = parseFloat(draft.tagPrice);
+  const price = unitPrice(draft);
   return (
     <div className="card scan-summary">
       {photo && (
@@ -459,8 +417,10 @@ function ScanSummary({
       <div className="scan-summary-text">
         <h3>{draft.name}</h3>
         <p className="note">
-          {Number.isFinite(price) && price > 0
-            ? `Shop price HK$${Math.round(price)}`
+          {price !== null
+            ? `Shop price HK$${Math.round(price)}${
+                parseInt(draft.packQuantity, 10) > 1 ? " each" : ""
+              }`
             : "No shop price read"}
         </p>
       </div>
@@ -530,7 +490,7 @@ function ConfirmStep({
           model. Missing specificity is the signal that actually matters, so it
           gets its own warning regardless of confidence.
         */}
-        {!draft.model.trim() && hasModelNumbers(identity.category) && (
+        {!draft.model.trim() && identity.modelExpected && (
           <div className="warning" style={{ marginBottom: 14 }}>
             No model number was read. Prices found will be for whichever variant
             the search picks, which may not be this one. Add the model from the
@@ -554,16 +514,46 @@ function ConfirmStep({
           </label>
         </div>
 
-        <label className="field">
-          <span>Shop price (HK$)</span>
-          <input
-            value={draft.tagPrice}
-            onChange={set("tagPrice")}
-            inputMode="decimal"
-            placeholder="Not read from the tag"
-            disabled={busy}
-          />
-        </label>
+        {/*
+          Pack quantity sits beside the price, always visible and always
+          editable. Hiding it when the model says 1 would make its one dangerous
+          mistake — reading "$20/3包" as a single-item price — the one thing a
+          shopper could not correct.
+        */}
+        <div className="field-row">
+          <label className="field">
+            <span>Shop price (HK$)</span>
+            <input
+              value={draft.tagPrice}
+              onChange={set("tagPrice")}
+              inputMode="decimal"
+              placeholder="Not read from the tag"
+              disabled={busy}
+            />
+          </label>
+          <label className="field" style={{ maxWidth: 110 }}>
+            <span>For how many</span>
+            <input
+              value={draft.packQuantity}
+              onChange={set("packQuantity")}
+              inputMode="numeric"
+              disabled={busy}
+            />
+          </label>
+        </div>
+
+        {(() => {
+          const each = unitPrice(draft);
+          const packs = parseInt(draft.packQuantity, 10);
+          if (each === null || !(packs > 1)) return null;
+          return (
+            <div className="warning" style={{ marginBottom: 14 }}>
+              That price covers <strong>{packs}</strong> items, so each one is
+              about <strong>HK${each.toFixed(2)}</strong>. Prices are compared
+              per item.
+            </div>
+          );
+        })()}
 
         {identity.assumptions && (
           <p className="note" style={{ marginBottom: 14 }}>

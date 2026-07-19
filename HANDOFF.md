@@ -137,6 +137,21 @@ itself. The existing prompt rule only covers crossed-out originals and instalmen
 **conditional member pricing is a third decoy class it handled without being told
 to.** Trilingual label (Chinese/Korean/English) was no obstacle.
 
+**Update 2 — four real supermarket shelf photos, disambiguation PASSED.** A
+Diverxu market stall with **13 products, 13 labels, and two prices on every
+label** (unit price plus a `$xx/2PCS` bundle) returned the right product paired
+with the right price: `Diverxu Bloc de Foie Gras 95g · $138`, correctly taking
+the unit price over the `$220/2PCS` promo. Three more shelves likewise. So the
+multi-product problem that broke on the ASUS counter is largely a *specificity*
+problem, not a *disambiguation* one — food is identified by brand, name and
+size, and that is enough.
+
+`storeName` also came back right this time (`Diverxu`, `New Basic`, read off
+signage and staff shirts) rather than fixture branding, and confidence of
+0.9–0.95 was deserved, unlike the 0.8 on "ASUS Laptop".
+
+Still untested: a *multi-product electronics* shelf, where specificity bites.
+
 **See also finding #5**, the other half of this failure: a name specific enough to
 pass this guard, for a product that does not exist, so the search silently prices
 a different one.
@@ -264,6 +279,41 @@ search, and cannot fit in the budget anyway (see finding #2).
 Measurement caveat, because it wasted time once: an error response has no
 `quotes` key, so naive test scripts count it as "zero quotes" and make timeouts
 look like empty results. Always check the HTTP status alongside the body.
+
+**7. Bundle pricing is a fourth decoy class, and the only one the model got
+wrong.** Found by real shelf photos. A sign reading 蝴蝶脆餅 **$20/3包** is twenty
+dollars for THREE packs; it was recorded as `tagPrice: 20`, which the verdict
+would then compare against single-pack market prices.
+
+The shape of it is precise, and worth knowing before touching the prompt:
+
+| the label shows | behaviour |
+|---|---|
+| unit price **and** a bundle promo (`$138` + `$220/2PCS`) | ✅ takes the unit price |
+| **only** a bundle price (`$20/3包`) | ❌ recorded the bundle as a unit price |
+
+So it was never confused about which price to *prefer* — it had no way to say
+"this price covers three". Fixed with `ProductIdentity.packQuantity`, and
+`unitPrice()` in `app/page.tsx` is now the only number the verdict, the price
+search and the saved scan may use. The field is shown beside the price and is
+**always editable**, because hiding it when the model says 1 would make its one
+dangerous mistake the one thing a shopper could not correct.
+
+Saved scans store the price ALREADY normalised to per-unit, so history holds
+comparable numbers and a stored scan is always `packQuantity: 1`.
+
+**8. Do not gate UI on a hand-written category list — ask the model.** The
+missing-model warning was originally gated by a keyword deny-list in
+`app/page.tsx`. It was written against categories I invented, tested against the
+same invented categories, and passed. Real photos then produced `Ham`,
+`Cured Meat` and `Instant Pasta`, none of which were on the list, so the app told
+a shopper holding cured ham to "add the model number from the label".
+
+`ProductIdentity.modelExpected` replaces it: the model answers whether the
+CATEGORY normally carries a SKU. Verified in both directions — food and cured
+meat return false, and the original ASUS shelf still returns
+`modelExpected: true`, so the warning that exists to prevent finding #1 is
+intact. The keyword list is deleted; do not reintroduce it.
 
 ## Gotchas already paid for (do not rediscover)
 

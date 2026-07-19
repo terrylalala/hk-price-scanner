@@ -48,6 +48,15 @@ export function rowToScan(row: ScanRow): Scan {
     currency: row.currency,
     storeName: row.store_name,
     locationHint: "",
+    // Both are identification-time signals with no column, and neither is
+    // needed once a scan is saved:
+    //   packQuantity — `tag_price` is stored ALREADY normalised to per-unit, so
+    //     a saved scan is always 1. Storing the raw bundle price would leave
+    //     history holding numbers that are not comparable to anything.
+    //   modelExpected — only drives a warning in the confirm step, which a saved
+    //     scan has long since passed.
+    packQuantity: 1,
+    modelExpected: true,
     confidence: row.confidence,
     assumptions: row.assumptions,
   };

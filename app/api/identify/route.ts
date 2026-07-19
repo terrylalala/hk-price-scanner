@@ -35,6 +35,8 @@ const IDENTITY_SCHEMA = {
     currency: { type: Type.STRING },
     storeName: { type: Type.STRING },
     locationHint: { type: Type.STRING },
+    packQuantity: { type: Type.NUMBER },
+    modelExpected: { type: Type.BOOLEAN },
     confidence: { type: Type.NUMBER },
     assumptions: { type: Type.STRING },
   },
@@ -47,6 +49,8 @@ const IDENTITY_SCHEMA = {
     "currency",
     "storeName",
     "locationHint",
+    "packQuantity",
+    "modelExpected",
     "confidence",
     "assumptions",
   ],
@@ -59,6 +63,8 @@ const IDENTITY_SCHEMA = {
     "currency",
     "storeName",
     "locationHint",
+    "packQuantity",
+    "modelExpected",
     "confidence",
     "assumptions",
   ],
@@ -74,6 +80,8 @@ Return:
 - "currency": ISO code inferred from the tag ("HKD" for HK$ or 港幣). Default "HKD" when a price is present but the symbol is ambiguous.
 - "storeName": shop name if visible on the tag, shelf or background, else "".
 - "locationHint": any branch, district or area text visible anywhere in the photo, copied verbatim (e.g. "Mong Kok branch", "銅鑼灣店", "Shop 210, Festival Walk"). "" if none. This is often printed in small text away from the product name — look for it.
+- "packQuantity": how many units the price in "tagPrice" covers. Almost always 1. Set it higher ONLY when the sign prices a bundle: "$20/3包" is 20 dollars for THREE packs, so tagPrice 20 and packQuantity 3. "$100/3PCS" is packQuantity 3. If the sign shows BOTH a single price and a bundle offer (e.g. "$138" with "Promotional $220/2PCS"), take the single price and packQuantity 1. Getting this wrong makes the app compare a bundle price against single-item prices.
+- "modelExpected": true if products in this category normally carry a model or SKU number a shopper could look up — electronics, appliances, tools, computers. False for things identified by brand, name and size instead — food, drink, groceries, cosmetics, clothing, books. Answer for the CATEGORY, not for whether you happened to read one.
 - "confidence": 0 to 1, your overall confidence in the product identification.
 - "assumptions": one short sentence on what was unclear or assumed.
 
@@ -203,6 +211,15 @@ function parseIdentity(text: string): ProductIdentity | null {
     return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
   })();
 
+  // Defaults are the safe end of each: a single item, and a category that does
+  // warn about a missing model. A wrong `false` hides the warning that exists to
+  // stop the ASUS failure; a wrong 1 leaves the price as the sign showed it.
+  const packQuantity = (() => {
+    const n = typeof o.packQuantity === "number" ? o.packQuantity : parseInt(String(o.packQuantity ?? ""), 10);
+    return Number.isFinite(n) && n >= 1 && n <= 99 ? Math.floor(n) : 1;
+  })();
+  const modelExpected = o.modelExpected === false || o.modelExpected === "false" ? false : true;
+
   const name = str(o.name);
   if (!name) return null;
 
@@ -215,6 +232,8 @@ function parseIdentity(text: string): ProductIdentity | null {
     currency: str(o.currency).toUpperCase() || "HKD",
     storeName: str(o.storeName),
     locationHint: str(o.locationHint),
+    packQuantity,
+    modelExpected,
     confidence,
     assumptions: str(o.assumptions),
   };

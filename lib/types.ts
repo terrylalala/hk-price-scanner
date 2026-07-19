@@ -20,6 +20,25 @@ export interface ProductIdentity {
    * district lookup actually depends on.
    */
   locationHint: string;
+  /**
+   * How many units the tag price covers. 1 for a normal single-item price.
+   *
+   * Real shelves price things in bundles: a sign reading 蝴蝶脆餅 $20/3包 is
+   * twenty dollars for THREE packs, and recording 20 as the price compares a
+   * bundle against single-unit market prices. Neither the crossed-out-original
+   * nor the member-price rule covers this — it is a distinct decoy class, and
+   * the first one the model got wrong on a real photo.
+   */
+  packQuantity: number;
+  /**
+   * Whether products in this category normally carry a model or SKU number.
+   *
+   * Asked of the model rather than derived from a keyword list here. The list
+   * approach was tried and failed on real data: it was written against invented
+   * categories and then let "Ham" and "Instant Pasta" through, telling a shopper
+   * holding cured ham to "add the model number from the label".
+   */
+  modelExpected: boolean;
   /** 0–1. Low values should visibly warn the user. */
   confidence: number;
   /** Short note on what was assumed or unreadable. */
