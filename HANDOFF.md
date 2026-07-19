@@ -50,6 +50,7 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 | ✅ History / Watch / Settings tabs | `TabBar` retabbed and wired; scans list, track, delete, home district |
 | ✅ GitHub repo | **public**, pushed: <https://github.com/terrylalala/hk-price-scanner> |
 | ✅ Neon DB + Vercel project | **deployed & verified** — <https://hk-price-scanner.vercel.app> |
+| ✅ Spend cap | **HK$150/month, AI Studio → Gemini API Spend, project `hk-price-scanner`** — see finding #11 |
 
 Pushed to <https://github.com/terrylalala/hk-price-scanner> (public, `main`).
 Verified on push: no secrets in history, `.env.local` absent from the remote,
@@ -451,6 +452,24 @@ defaulted to `'local'`, `accountsEnabled()` is the switch, and `requireUser()`
 fails closed with 501 if the `AUTH_*` vars appear before sign-in is built. So
 accounts remain a config change plus an Auth.js branch — **plus that global cap.**
 
+**Backstop shipped (19 Jul): a HK$150/month spend cap on the `hk-price-scanner`
+Google project.** Set in **AI Studio → Gemini API Spend**, not Cloud Console.
+The distinction matters and cost a wrong answer once:
+
+- **AI Studio "Monthly spend cap"** is a real cutoff — it stops serving requests.
+  Marked *Experimental*. This is the one that is set.
+- **Cloud Console "Budgets & alerts"** only emails you. It does **not** stop
+  spend without a Pub/Sub function wired to disable billing. Do not reach for
+  this one believing it is a brake.
+
+Two documented edges: overage is possible inside a **~10 minute latency** window,
+and the cap resets on the 1st **PST**, which is mid-afternoon HK time — so the
+month boundary is not the one a HK user would assume.
+
+This bounds the bill even if every other control fails, but it bounds it by
+**breaking the app** when hit. It is a backstop, not the plan. The global cap
+above is still a prerequisite for accounts.
+
 **12. Multi-photo identify works, but does NOT solve the multi-label shelf —
 and the reason it doesn't is sound.** `/api/identify` now accepts up to three
 views of one product (`images: [{imageBase64, mediaType}]`, single form still
@@ -506,7 +525,9 @@ paperwork. Roughly half a day, most of it Google's forms.
 2. **A global rate cap is a PREREQUISITE, not a follow-up.** `lib/rateLimit.ts`
    counts per user, so caps multiply by user count: five accounts turn a ~US$14
    worst case into ~US$350 (finding #11). Ship the global cap first or the bill
-   scales with people.
+   scales with people. The HK$150 AI Studio spend cap (finding #11) caps the
+   damage but does not remove this step — it stops the bill by making the app
+   return errors for the rest of the month, which is not a rate limit.
 
 *Why deferred:* the shared-password gate already solved the real problem
 (strangers spending the API key). Accounts solve a different one — separating
