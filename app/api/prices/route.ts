@@ -211,6 +211,39 @@ function isBareHomepage(url: string): boolean {
 }
 
 /**
+ * True when a URL is a browse/search page rather than one product.
+ *
+ * Having a path is not enough to be useful: a real result was
+ * `centralfield.com/product-category/HOM/?view=1&…`, which passed the
+ * "not a home page" test and still dropped the shopper into a filtered
+ * category listing to find the item themselves.
+ *
+ * Deliberately conservative. A false positive here trades a working product
+ * link for an opaque citation redirect, so this matches only patterns that are
+ * unambiguously listings — note `/product-category/` is checked before
+ * `/product/`, since the former contains the latter's substring.
+ */
+function looksLikeListing(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.toLowerCase();
+    // No `shop` here on purpose. Plenty of sites use /shop/<product-name> as a
+    // product URL, so it flags real links as listings. The one /shop/ category
+    // page observed came from a citation destination, which this function never
+    // sees — so including it would cost false positives and buy nothing.
+    const listingPath =
+      /\/(search|category|categories|product-category|collections|catalogue|catalog|brand)(\/|$)/.test(
+        path,
+      );
+    // Search-ish query keys, e.g. ?q=, ?s=, ?keyword=, ?query=
+    const searchQuery = /(^|&)(q|s|query|keyword|search|kw)=/.test(u.search.slice(1));
+    return listingPath || searchQuery;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Upgrade quote links that point at a shop's front door.
  *
  * The model writes `url` from memory and overwhelmingly returns the home page —
@@ -218,13 +251,22 @@ function isBareHomepage(url: string): boolean {
  * yohohongkong.com to hunt for the item themselves, which defeats the point of
  * the quote.
  *
- * Grounding citations do not have this problem: they are the pages Google
- * actually retrieved, so they land on the product. Where a bare home page has a
- * citation for the same host, swap in the citation.
+ * Grounding citations are usually better: they are pages Google actually
+ * retrieved. Resolving every citation redirect once gave 7 of 9 real product
+ * pages — but only 7. The other two were a category page and, for HKTVmall, a
+ * literal search URL, because that is what Google had indexed. So a citation is
+ * a better bet than a home page or a listing page, not a guarantee of a product
+ * page, and some shops cannot be fixed from here at all: if a retailer only
+ * exposes its catalogue through search URLs, every available link is a search URL.
  *
- * Only bare home pages are replaced. A model URL with a real path is left alone
- * — it names the destination honestly, whereas a citation is an opaque Google
- * redirect, so it is only worth trading down to when the alternative is useless.
+ * Replaced: bare home pages, and browse/search listings (see looksLikeListing).
+ * Left alone: any other model URL with a real path — it names its destination
+ * honestly, whereas a citation is an opaque Google redirect, so it is only worth
+ * trading down to when the alternative is useless.
+ *
+ * Note the citation destination cannot be inspected here. It is an opaque
+ * redirect, and following 8 of them would cost 8 HTTP round trips inside the
+ * 50s search budget. Hence heuristics on the visible model URL only.
  */
 function withBestLinks(quotes: PriceQuote[], citations: Citation[]): PriceQuote[] {
   if (citations.length === 0) return quotes;
@@ -240,7 +282,8 @@ function withBestLinks(quotes: PriceQuote[], citations: Citation[]): PriceQuote[
   }
 
   return quotes.map((q) => {
-    if (!q.url || !isBareHomepage(q.url)) return q;
+    if (!q.url) return q;
+    if (!isBareHomepage(q.url) && !looksLikeListing(q.url)) return q;
     const deep = byHost.get(hostOf(q.url));
     return deep ? { ...q, url: deep } : q;
   });
