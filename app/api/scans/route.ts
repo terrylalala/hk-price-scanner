@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { del, put } from "@vercel/blob";
 import { ensureSchema, getSql, hasBlob, hasDb } from "@/lib/db";
 import { ownerId, requireUser } from "@/lib/session";
 import { ScanRow, bestQuote, hongKongDay, rowToScan } from "@/lib/scans";
@@ -96,6 +96,14 @@ interface CreateBody {
    * full image for any index without one.
    */
   thumbsBase64?: string[];
+  /**
+   * A previous scan this one supersedes: the same photo session searched again
+   * in the same mode. If set, that row (and its Blob photos) is deleted AFTER
+   * this new row is safely inserted, so History keeps only the latest search
+   * per mode rather than a row per retry. See the delete in POST for the guard
+   * that stops it from clobbering a saved (watching) scan.
+   */
+  replaceId?: string;
 }
 
 /** ~10MB of base64. The client downscales to 1600px, so this is a sanity bound. */
@@ -251,6 +259,51 @@ export async function POST(req: NextRequest) {
       )
       returning *
     `) as unknown as ScanRow[];
+
+    // "Latest per mode": a re-search of the same photo in the same mode replaces
+    // its predecessor. Done AFTER the insert so a failed save never loses the
+    // old row, and scoped by user_id AND watching=false so it can only ever
+    // remove an unsaved scan from this same session — never a scan the user has
+    // deliberately saved to Wishlist, and never someone else's row. mode is
+    // matched too so switching exact↔similar keeps both, as intended.
+    if (typeof body.replaceId === "string" && body.replaceId && body.replaceId !== id) {
+      try {
+        const removed = (await sql`
+          delete from scans
+          where id = ${body.replaceId} and user_id = ${uid}
+            and watching = false and mode = ${body.mode === "similar" ? "similar" : "exact"}
+          returning photo_url, photo_urls, thumb_urls
+        `) as unknown as {
+          photo_url: string | null;
+          photo_urls: string[] | null;
+          thumb_urls: string[] | null;
+        }[];
+
+        // Free the superseded row's Blob objects. Blob has no referential
+        // integrity to Postgres, so an un-deleted photo would leak storage
+        // exactly as documented in /api/scans/[id] DELETE.
+        const urls =
+          removed.length === 0
+            ? []
+            : Array.from(
+                new Set(
+                  [
+                    ...(removed[0].photo_urls ?? []),
+                    ...(removed[0].thumb_urls ?? []),
+                    removed[0].photo_url,
+                  ].filter((u): u is string => !!u),
+                ),
+              );
+        if (urls.length && hasBlob()) {
+          await Promise.all(urls.map((u) => del(u)));
+        }
+      } catch (err) {
+        // The new scan is saved, which is what matters. A failed replace leaves
+        // a duplicate old row behind — untidy, not lost data — so it is logged
+        // rather than allowed to fail the request.
+        console.warn("[/api/scans POST] replace of superseded scan failed", err);
+      }
+    }
 
     return NextResponse.json({ scan: rowToScan(rows[0]) }, { status: 201 });
   } catch (err) {
