@@ -9,6 +9,21 @@ export interface ProductIdentity {
   model: string;
   /** Rough category, e.g. "Headphones", "Laptop", "Kettle". */
   category: string;
+  /**
+   * Whether `model` was read character-for-character off a label, or inferred.
+   *
+   * A shelf of Xiaomi ceiling lights showed three cards — D20 $229, D50 $359,
+   * D40 $469 — against one display unit. The model returned "D45": a number on
+   * no card, sitting between two that were, carrying D40's price, at confidence
+   * 0.9. Because a model was PRESENT, the missing-model warning stayed hidden,
+   * so a fabricated SKU is worse than a blank one: vagueness warns, invention
+   * does not.
+   *
+   * The prompt already forbade guessing and was ignored. Giving the model a way
+   * to admit it guessed works better than telling it not to — the same shape as
+   * PriceQuote.exactModel. False is treated exactly like no model at all.
+   */
+  modelVerbatim: boolean;
   /** The price printed on the tag, or null if none was legible. */
   tagPrice: number | null;
   currency: string;

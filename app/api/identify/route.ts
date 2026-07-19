@@ -29,6 +29,7 @@ const IDENTITY_SCHEMA = {
     brand: { type: Type.STRING },
     model: { type: Type.STRING },
     category: { type: Type.STRING },
+    modelVerbatim: { type: Type.BOOLEAN },
     // NULLABLE is important: "no legible price" must be expressible. Without
     // it the model invents a number to satisfy the schema.
     tagPrice: { type: Type.NUMBER, nullable: true },
@@ -45,6 +46,7 @@ const IDENTITY_SCHEMA = {
     "brand",
     "model",
     "category",
+    "modelVerbatim",
     "tagPrice",
     "currency",
     "storeName",
@@ -59,6 +61,7 @@ const IDENTITY_SCHEMA = {
     "brand",
     "model",
     "category",
+    "modelVerbatim",
     "tagPrice",
     "currency",
     "storeName",
@@ -76,6 +79,7 @@ Return:
 - "name": the most specific product name you can justify, including model number when legible (e.g. "Sony WH-1000XM5 Wireless Headphones"). If you can only tell the category, say that plainly rather than guessing a model.
 - "brand" and "model": "" when not legible. Do NOT guess a model number from appearance alone — a wrong model number sends the price search to the wrong product, which is worse than an empty field.
 - "category": short, e.g. "Headphones", "Laptop", "Rice cooker".
+- "modelVerbatim": true ONLY if you can read the model number character-for-character on a label, box or the product itself. Set it FALSE if you inferred it, completed it, or chose between several nearby labels. A shelf showing cards for D20, D50 and D40 beside one display unit does NOT let you conclude the unit is any of them, and it certainly does not let you write "D45" — a number on no card at all. When false, still say in "assumptions" which labels you saw. A guessed model number is worse than an empty one: an empty one warns the shopper, a guessed one looks certain.
 - "tagPrice": the price shown on the tag as a plain number, no symbols or separators. Use null if no price is legible. If several prices appear, take the main selling price, not a crossed-out original or a monthly instalment.
 - "currency": ISO code inferred from the tag ("HKD" for HK$ or 港幣). Default "HKD" when a price is present but the symbol is ambiguous.
 - "storeName": shop name if visible on the tag, shelf or background, else "".
@@ -219,6 +223,8 @@ function parseIdentity(text: string): ProductIdentity | null {
     return Number.isFinite(n) && n >= 1 && n <= 99 ? Math.floor(n) : 1;
   })();
   const modelExpected = o.modelExpected === false || o.modelExpected === "false" ? false : true;
+  // Fails closed: only an explicit true counts as read-off-a-label.
+  const modelVerbatim = o.modelVerbatim === true || o.modelVerbatim === "true";
 
   const name = str(o.name);
   if (!name) return null;
@@ -228,6 +234,7 @@ function parseIdentity(text: string): ProductIdentity | null {
     brand: str(o.brand),
     model: str(o.model),
     category: str(o.category),
+    modelVerbatim,
     tagPrice: price,
     currency: str(o.currency).toUpperCase() || "HKD",
     storeName: str(o.storeName),

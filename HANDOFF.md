@@ -315,6 +315,43 @@ meat return false, and the original ASUS shelf still returns
 `modelExpected: true`, so the warning that exists to prevent finding #1 is
 intact. The keyword list is deleted; do not reintroduce it.
 
+**9. A FABRICATED model number is worse than a missing one, and real electronics
+shelves produce them.** This closes the electronics half of finding #1, and it
+failed in a new way.
+
+A Xiaomi shelf showed three e-ink cards — **D20 $229, D50 $359, D40 $469** —
+against one display unit. `/api/identify` returned:
+
+```
+name: "Xiaomi 吸頂燈 D45"   model: "D45"   tagPrice: 469   confidence: 0.9
+```
+
+**There is no D45.** It invented a SKU sitting between two real ones and attached
+a third card's price. This is the origin of the D45 scan in finding #5 — that
+product never existed.
+
+The severity is the inversion: vagueness ("ASUS Laptop") leaves `model` empty and
+**fires** the missing-model warning; invention fills `model` in and **suppresses**
+it. The most confident-looking output is the least trustworthy one. The prompt
+already said "Do NOT guess a model number from appearance alone" and was ignored —
+three labels facing one product is a situation the instruction did not resolve.
+
+Fixed with `ProductIdentity.modelVerbatim`: was the SKU read character-for-
+character off a label, or inferred? Telling the model it may **admit** guessing
+works where forbidding guessing did not — the same shape as `PriceQuote.exactModel`.
+False is treated exactly as no model at all, and the warning text adapts.
+
+Verified both directions, which was essential — the fix could otherwise "work" by
+warning on everything. Same shelf, three runs: `model: ""`, `verbatim: false`,
+`tagPrice: null`, warning shown, assumptions naming the competing labels. Controls
+(Plaud box, AULA T650 box): `verbatim: true`, warning hidden.
+
+Also observed, unfixed: at **516×387** the AULA sign 【超值2件】**$550** was read as
+`tagPrice: 50` at confidence 0.95 — a 10× error stated confidently. That image is
+far below what a phone produces, so it is probably a resolution artefact rather
+than a model failure, but it shows price reading degrades silently, not loudly.
+Worth re-testing at full resolution before drawing conclusions.
+
 ## Gotchas already paid for (do not rediscover)
 
 - **In a HK electronics shop, the model number is not on the product — it is on

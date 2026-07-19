@@ -57,6 +57,9 @@ export function rowToScan(row: ScanRow): Scan {
     //     scan has long since passed.
     packQuantity: 1,
     modelExpected: true,
+    // Also identification-time only: by the time a scan is saved the shopper
+    // has seen and confirmed the model in the confirm step.
+    modelVerbatim: true,
     confidence: row.confidence,
     assumptions: row.assumptions,
   };

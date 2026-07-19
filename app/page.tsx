@@ -490,11 +490,19 @@ function ConfirmStep({
           model. Missing specificity is the signal that actually matters, so it
           gets its own warning regardless of confidence.
         */}
-        {!draft.model.trim() && identity.modelExpected && (
+        {/*
+          A model the user edited is theirs, so trust it. Otherwise an inferred
+          model counts as no model: the D45 case returned a confident SKU that
+          appeared on no label, and because the field was non-empty this warning
+          stayed hidden — the one case where it was most needed.
+        */}
+        {identity.modelExpected &&
+          (!draft.model.trim() ||
+            (!identity.modelVerbatim && draft.model === identity.model)) && (
           <div className="warning" style={{ marginBottom: 14 }}>
-            No model number was read. Prices found will be for whichever variant
-            the search picks, which may not be this one. Add the model from the
-            label if you can — it is the single biggest accuracy win.
+            {draft.model.trim()
+              ? `“${draft.model}” was not read cleanly off a label — it may be guessed. Check it against the label before searching; a wrong model finds a different product’s prices.`
+              : "No model number was read. Prices found will be for whichever variant the search picks, which may not be this one. Add the model from the label if you can — it is the single biggest accuracy win."}
           </div>
         )}
 
