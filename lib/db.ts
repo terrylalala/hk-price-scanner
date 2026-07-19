@@ -115,6 +115,19 @@ async function initSchema(): Promise<void> {
     alter table scans add column if not exists photo_urls jsonb
   `;
 
+  /**
+   * Small versions of `photo_urls`, same order, for list thumbnails.
+   *
+   * Separate blobs rather than resizing on request: Blob serves bytes, it does
+   * not transform them, so without these a 52px thumbnail downloads the full
+   * 1600px original (measured at 2.5–9.6s each). Null for rows written before
+   * thumbnails existed — /api/photo falls back to the full image for those, so
+   * they stay slow but keep working.
+   */
+  await sql`
+    alter table scans add column if not exists thumb_urls jsonb
+  `;
+
   await sql`create index if not exists scans_user_ts_idx on scans (user_id, ts desc)`;
   await sql`create index if not exists scans_day_idx on scans (user_id, day)`;
   await sql`create index if not exists scans_watch_idx on scans (user_id, watching)`;

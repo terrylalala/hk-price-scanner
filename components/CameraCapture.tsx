@@ -8,7 +8,21 @@ export interface CapturedImage {
   mediaType: "image/jpeg";
   /** Full data URL for preview <img>. */
   dataUrl: string;
+  /**
+   * A small JPEG of the same frame, for list thumbnails.
+   *
+   * Made here rather than on the server because the browser already has the
+   * decoded bitmap: a second canvas pass is nearly free, while resizing server
+   * -side would mean shipping the full image somewhere to be shrunk. Without
+   * this a 52px thumbnail downloads the whole 1600px original — measured at
+   * 2.5–9.6s per image, which is what made History unusable on a phone.
+   */
+  thumbBase64: string;
 }
+
+/** Longest side of the stored thumbnail. ~3x the largest CSS size it is drawn
+ *  at (60px in the detail strip), so it stays sharp on a retina phone. */
+const THUMB_DIM = 320;
 
 /**
  * Downscale an image file to a JPEG whose longest side is <= maxDim.
@@ -46,7 +60,23 @@ async function downscale(file: File, maxDim = 1600, quality = 0.92): Promise<Cap
 
   const outUrl = canvas.toDataURL("image/jpeg", quality);
   const base64 = outUrl.slice(outUrl.indexOf(",") + 1);
-  return { base64, mediaType: "image/jpeg", dataUrl: outUrl };
+
+  // Drawn from `img` again rather than downscaling the canvas, so the thumbnail
+  // is resampled once from the original instead of twice through a lossy JPEG.
+  // Quality 0.7 is fine at this size and roughly halves the bytes again.
+  const tScale = Math.min(1, THUMB_DIM / Math.max(img.width, img.height));
+  const tCanvas = document.createElement("canvas");
+  tCanvas.width = Math.max(1, Math.round(img.width * tScale));
+  tCanvas.height = Math.max(1, Math.round(img.height * tScale));
+  const tCtx = tCanvas.getContext("2d");
+  let thumbBase64 = "";
+  if (tCtx) {
+    tCtx.drawImage(img, 0, 0, tCanvas.width, tCanvas.height);
+    const tUrl = tCanvas.toDataURL("image/jpeg", 0.7);
+    thumbBase64 = tUrl.slice(tUrl.indexOf(",") + 1);
+  }
+
+  return { base64, mediaType: "image/jpeg", dataUrl: outUrl, thumbBase64 };
 }
 
 export default function CameraCapture({

@@ -363,6 +363,55 @@ a {
   flex-shrink: 0;
 }
 
+/* Wrapper that makes a thumbnail tappable without inheriting button chrome. */
+.thumb-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ---------- full-size photo viewer ---------- */
+
+/* Fixed to the viewport and above the tab bar, so the photo is never partly
+   hidden behind it. The image is constrained to the screen rather than shown at
+   native size — a 1600px capture on a 390px phone is otherwise unreadable. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  cursor: zoom-out;
+}
+
+.lightbox img {
+  max-width: 100%;
+  /* Leaves room for the close control and the iOS safe area. */
+  max-height: calc(100% - 40px);
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
 /* ---------- tab bar ---------- */
 
 /* Room for the fixed bar plus the iOS home indicator, so the last card in a

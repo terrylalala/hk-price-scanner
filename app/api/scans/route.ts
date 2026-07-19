@@ -81,6 +81,12 @@ interface CreateBody {
   photoBase64?: string;
   /** All photos for this scan. Takes precedence over photoBase64. */
   photosBase64?: string[];
+  /**
+   * Small versions of `photosBase64`, positionally matched. Optional: a client
+   * that omits them still saves its photos, and /api/photo falls back to the
+   * full image for any index without one.
+   */
+  thumbsBase64?: string[];
 }
 
 /** ~10MB of base64. The client downscales to 1600px, so this is a sanity bound. */
@@ -101,13 +107,16 @@ async function storePhoto(
   id: string,
   base64: string | undefined,
   index: number,
+  variant: "full" | "thumb" = "full",
 ): Promise<string | null> {
   if (!base64 || !hasBlob()) return null;
   const data = base64.includes(",") ? base64.slice(base64.indexOf(",") + 1) : base64;
   if (data.length > MAX_PHOTO_BASE64) return null;
 
+  // Thumbnails get their own key so both variants can coexist for one index.
+  const key = variant === "thumb" ? `scans/${id}-${index}-t.jpg` : `scans/${id}-${index}.jpg`;
   try {
-    const blob = await put(`scans/${id}-${index}.jpg`, Buffer.from(data, "base64"), {
+    const blob = await put(key, Buffer.from(data, "base64"), {
       access: "private",
       contentType: "image/jpeg",
     });
@@ -118,10 +127,33 @@ async function storePhoto(
   }
 }
 
-/** Uploads every photo, dropping any that fail. Order is preserved. */
-async function storePhotos(id: string, list: string[]): Promise<string[]> {
-  const results = await Promise.all(list.map((b64, i) => storePhoto(id, b64, i)));
-  return results.filter((u): u is string => !!u);
+/**
+ * Uploads every photo, dropping any that fail. Order is preserved.
+ *
+ * Thumbnails are uploaded positionally alongside the full images, and a failed
+ * thumbnail must NOT shift the array: index N of `thumbs` has to stay the
+ * thumbnail of index N of `photos`, or the list would show one scan's photo
+ * against another's. So this filters the full list and then keeps only the
+ * thumbs whose full image survived.
+ */
+async function storePhotos(
+  id: string,
+  list: string[],
+  thumbs: string[],
+): Promise<{ photos: string[]; thumbs: string[] }> {
+  const pairs = await Promise.all(
+    list.map(async (b64, i) => ({
+      full: await storePhoto(id, b64, i, "full"),
+      thumb: await storePhoto(id, thumbs[i], i, "thumb"),
+    })),
+  );
+  const kept = pairs.filter((p): p is { full: string; thumb: string | null } => !!p.full);
+  return {
+    photos: kept.map((p) => p.full),
+    // "" holds the slot for a photo whose thumbnail failed; /api/photo treats an
+    // empty entry as "no thumbnail" and serves the full image instead.
+    thumbs: kept.map((p) => p.thumb ?? ""),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -174,7 +206,12 @@ export async function POST(req: NextRequest) {
       : body.photoBase64
         ? [body.photoBase64]
         : [];
-  const photoUrls = await storePhotos(id, incoming);
+  const incomingThumbs = Array.isArray(body.thumbsBase64) ? body.thumbsBase64 : [];
+  const { photos: photoUrls, thumbs: thumbUrls } = await storePhotos(
+    id,
+    incoming,
+    incomingThumbs,
+  );
   // First photo stays in photo_url: it is what the thumbnail and old rows use.
   const photoUrl = photoUrls[0] ?? null;
 
@@ -189,7 +226,7 @@ export async function POST(req: NextRequest) {
         tag_price, currency, store_name, district,
         confidence, assumptions,
         best_price, best_source, quotes, citations, notes,
-        search_suggestions_html, photo_url, photo_urls
+        search_suggestions_html, photo_url, photo_urls, thumb_urls
       ) values (
         ${id}, ${uid}, ${now.toISOString()}, ${hongKongDay(now)},
         ${name}, ${str(p.brand)}, ${str(p.model)}, ${str(p.category)},
@@ -199,7 +236,8 @@ export async function POST(req: NextRequest) {
         ${JSON.stringify(quotes)}, ${JSON.stringify(citations)},
         ${str(body.notes) || null},
         ${str(body.searchSuggestionsHtml) || null}, ${photoUrl},
-        ${photoUrls.length ? JSON.stringify(photoUrls) : null}
+        ${photoUrls.length ? JSON.stringify(photoUrls) : null},
+        ${thumbUrls.length ? JSON.stringify(thumbUrls) : null}
       )
       returning *
     `) as unknown as ScanRow[];

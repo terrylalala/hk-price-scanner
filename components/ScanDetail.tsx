@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Scan } from "@/lib/types";
 import { districtById } from "@/lib/hkDistricts";
 
@@ -21,6 +22,29 @@ import { districtById } from "@/lib/hkDistricts";
  */
 
 export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () => void }) {
+  /**
+   * Which photo is open full-size, or null.
+   *
+   * An in-app overlay rather than a link to /api/photo. Opening the raw image
+   * URL is a full page navigation OUT of the app: it renders at the image's
+   * native size with no way to fit it to the screen, and the back button then
+   * returns to the app's initial state — the Scan tab — rather than to this
+   * scan, because the History tab and the open detail are component state that
+   * the reload discards.
+   */
+  const [zoomed, setZoomed] = useState<number | null>(null);
+
+  // Escape closes the viewer. Bound only while it is open so this component
+  // does not listen on every keystroke in the rest of the app.
+  useEffect(() => {
+    if (zoomed === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setZoomed(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomed]);
+
   const { quotes, citations, searchSuggestionsHtml } = scan;
   const district = scan.district ? districtById(scan.district) : undefined;
   const canShowPrices = quotes.length > 0 && !!searchSuggestionsHtml;
@@ -75,16 +99,15 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
         {scan.photoCount > 0 && (
           <div className="thumb-strip">
             {Array.from({ length: scan.photoCount }, (_, i) => (
-              <a
+              <button
                 key={i}
-                href={`/api/photo/${scan.id}?i=${i}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open full size"
+                className="thumb-button"
+                onClick={() => setZoomed(i)}
+                aria-label={`View photo ${i + 1} of ${scan.photoCount} full size`}
               >
                 <img
                   className="thumb"
-                  src={`/api/photo/${scan.id}?i=${i}`}
+                  src={`/api/photo/${scan.id}?i=${i}&size=thumb`}
                   alt={
                     scan.photoCount > 1
                       ? `Photo ${i + 1} of ${scan.photoCount} of ${scan.product.name}`
@@ -92,7 +115,7 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
                   }
                   loading="lazy"
                 />
-              </a>
+              </button>
             ))}
           </div>
         )}
@@ -174,6 +197,24 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
           These prices were retrieved by AI when the scan was taken, not now. They
           may be well out of date. Always verify in store before buying.
         </p>
+      )}
+
+      {/* Full-size viewer. Tapping anywhere closes it, which is the gesture
+          people already expect from a photo overlay; Escape does the same for
+          anyone on a keyboard. */}
+      {zoomed !== null && (
+        <div
+          className="lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Photo of ${scan.product.name}`}
+          onClick={() => setZoomed(null)}
+        >
+          <img src={`/api/photo/${scan.id}?i=${zoomed}`} alt={`Photo of ${scan.product.name}`} />
+          <button className="lightbox-close" aria-label="Close photo">
+            ✕
+          </button>
+        </div>
       )}
     </div>
   );

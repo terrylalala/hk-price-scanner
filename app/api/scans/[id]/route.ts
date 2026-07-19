@@ -124,22 +124,27 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     // (since /api/photo/[id] needs the row) but still counted against storage.
     const rows = (await sql`
       delete from scans where id = ${id} and user_id = ${uid}
-      returning id, photo_url, photo_urls
+      returning id, photo_url, photo_urls, thumb_urls
     `) as unknown as {
       id: string;
       photo_url: string | null;
       photo_urls: string[] | null;
+      thumb_urls: string[] | null;
     }[];
 
     if (rows.length === 0) return notFound();
 
-    // Every photo, not just the first. photo_url duplicates photo_urls[0], so
-    // dedupe or the second delete fails on an already-removed object.
+    // Every photo AND every thumbnail. Thumbnails are separate blob objects, so
+    // omitting them here would reintroduce the exact leak described above — just
+    // smaller and twice as many. The "" placeholders for failed thumbnail
+    // uploads are filtered out with the nulls.
     const urls = Array.from(
       new Set(
-        [...(rows[0].photo_urls ?? []), rows[0].photo_url].filter(
-          (u): u is string => !!u,
-        ),
+        [
+          ...(rows[0].photo_urls ?? []),
+          ...(rows[0].thumb_urls ?? []),
+          rows[0].photo_url,
+        ].filter((u): u is string => !!u),
       ),
     );
     if (urls.length && hasBlob()) {

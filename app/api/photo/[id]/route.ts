@@ -33,8 +33,13 @@ export async function GET(
     // Ownership is enforced here: a row belonging to someone else simply
     // doesn't match, so it is indistinguishable from a missing photo.
     const rows = (await sql`
-      select photo_url, photo_urls from scans where id = ${id} and user_id = ${uid}
-    `) as unknown as { photo_url: string | null; photo_urls: string[] | null }[];
+      select photo_url, photo_urls, thumb_urls
+        from scans where id = ${id} and user_id = ${uid}
+    `) as unknown as {
+      photo_url: string | null;
+      photo_urls: string[] | null;
+      thumb_urls: string[] | null;
+    }[];
 
     // ?i=N selects which photo. photo_urls is the full list; photo_url is the
     // fallback for rows written before multiple photos existed, where index 0
@@ -49,7 +54,13 @@ export async function GET(
     const iParam = Number(req.nextUrl.searchParams.get("i"));
     const index = Number.isFinite(iParam) && iParam > 0 ? Math.floor(iParam) : 0;
 
-    const url = all[index];
+    // ?size=thumb asks for the small variant. It is a request, not a guarantee:
+    // rows saved before thumbnails existed, and photos whose thumbnail upload
+    // failed (held as ""), fall back to the full image. Falling back keeps those
+    // scans working — slowly — rather than showing a broken image.
+    const wantThumb = req.nextUrl.searchParams.get("size") === "thumb";
+    const thumbs = Array.isArray(row?.thumb_urls) ? row.thumb_urls : [];
+    const url = (wantThumb && thumbs[index]) || all[index];
     if (!url) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }

@@ -287,6 +287,10 @@ export default function Home() {
           // Already downscaled to 1600px by CameraCapture. Optional: the route
           // saves the scan regardless if the upload fails.
           photosBase64: photos.map((p) => p.base64),
+          // Positional: thumbsBase64[i] is the thumbnail of photosBase64[i].
+          // Sent from the client because the browser already holds the decoded
+          // bitmap; see CapturedImage.thumbBase64.
+          thumbsBase64: photos.map((p) => p.thumbBase64),
         }),
       });
       if (!res.ok && res.status !== 501) {

@@ -136,7 +136,7 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
               {scan.hasPhoto && (
                 <img
                   className="thumb"
-                  src={`/api/photo/${scan.id}`}
+                  src={`/api/photo/${scan.id}?size=thumb`}
                   alt=""
                   loading="lazy"
                   onClick={() => setOpenId(scan.id)}
