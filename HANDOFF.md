@@ -479,6 +479,43 @@ in a close-up but not a wide shot **and no competing labels exist**. That case i
 untested. It does not rescue an ambiguous shelf, and the correct fix there remains
 the confirm step — the warning fires and the shopper types the model.
 
+**13. Turning on accounts: what is genuinely ready, and the two steps the
+"no migration" claim glosses over.** Reviewed while deciding whether to add
+OAuth like the Calorie Tracker. Answer: **deferred, not blocked** — see the
+reasoning at the end.
+
+*Genuinely done, and it is the expensive part:*
+- **Every** owner-scoped query goes through `ownerId(authz.user)` — 11 call sites
+  across all six routes, no exceptions.
+- `requireUser()` is a **single branch point**. Add the signed-in branch there and
+  every route inherits it untouched. It already fails closed with 501 if
+  `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` appear before sign-in exists.
+
+*What is actually left:* install `next-auth`, an `auth.ts` with the Google
+provider, the signed-in branch, a sign-in button, Google Cloud consent-screen
+paperwork. Roughly half a day, most of it Google's forms.
+
+*And two steps nothing else records:*
+
+1. **Existing data goes invisible.** The schema needs no migration; the DATA
+   does. Rows are owned by `'local'` (at time of writing: scans 6, usage 3,
+   user_settings 1). A newly signed-in account gets a different id, so that
+   history simply disappears. Fix is one statement, but it must be remembered:
+   `update scans set user_id = '<new-id>' where user_id = 'local'` — and the same
+   for `usage` and `user_settings`.
+2. **A global rate cap is a PREREQUISITE, not a follow-up.** `lib/rateLimit.ts`
+   counts per user, so caps multiply by user count: five accounts turn a ~US$14
+   worst case into ~US$350 (finding #11). Ship the global cap first or the bill
+   scales with people.
+
+*Why deferred:* the shared-password gate already solved the real problem
+(strangers spending the API key). Accounts solve a different one — separating
+histories between people you trust — and it is not clear that is wanted. Price
+scans are about products and shops, not about a person, unlike a calorie log;
+a shared history may be a feature ("we already priced this at HK$469"). Wait for
+someone to actually ask for separation. Revisit sooner if the app is shared
+beyond family, since a shared password cannot be revoked from one person.
+
 ## Gotchas already paid for (do not rediscover)
 
 - **In a HK electronics shop, the model number is not on the product — it is on
