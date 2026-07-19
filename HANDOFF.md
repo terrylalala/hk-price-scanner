@@ -43,7 +43,7 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 | ✅ Scaffold, deps, typecheck clean | `npm run dev` works |
 | ✅ `lib/` — db schema, districts, rate limits, session, types | |
 | ✅ `/api/identify` — vision + structured output | passes on close-ups of a single item incl. a real shelf label; **fails on a multi-product shelf — see finding #1** |
-| ⚠️ `/api/prices` — grounded search | works, but **intermittently 500s at ~60s — see finding #2** |
+| ⚠️ `/api/prices` — grounded search | works, but **unreliable in five distinct ways — see finding #6** |
 | ✅ Scan flow UI — capture → identify → confirm → search → results | `app/page.tsx`, verified end-to-end in browser |
 | ⬜ `/api/scans` CRUD, `/api/advice` | not started — **scans are not persisted; reload loses the result** |
 | ⬜ History / Watch / Settings tabs | not started |
@@ -134,6 +134,10 @@ itself. The existing prompt rule only covers crossed-out originals and instalmen
 **conditional member pricing is a third decoy class it handled without being told
 to.** Trilingual label (Chinese/Korean/English) was no obstacle.
 
+**See also finding #5**, the other half of this failure: a name specific enough to
+pass this guard, for a product that does not exist, so the search silently prices
+a different one.
+
 **Known defect from this testing:** the missing-model warning is electronics-specific
 and fires spuriously on categories that have no model numbers. On the wine it told
 the user "Add the model from the label if you can — it is the single biggest
@@ -207,6 +211,57 @@ results, but a real and identifiable one. See task #43 — the online/in-store s
 plus a manually-set home district still looks right, but it should *keep* district
 data where dealers provide it rather than discarding the field.
 
+**5. "Specific but substituted" — a second way to price the wrong product, and
+the finding #1 guard does NOT catch it. FIXED, but understand it before touching
+the verdict.** Finding #1's fix stops the model pricing a *generic* name. This is
+the other half: the name is perfectly specific, the product just does not exist.
+
+Scanning a Xiaomi 吸頂燈 **D45** returned four prices, every one for a
+米家吸頂燈**450** or a **D40** — different products. The model behaved correctly:
+the prompt says to name any substitution in `note`, and it did, every time. The
+app then ignored the notes, sorted by price, and rendered a confident red
+**"You can do better — HK$101 above the cheapest, 27% more."**
+
+The detail that makes it worse: one substituted listing recorded an *original
+price of HK$469* — exactly the shopper's tag. The scanned price was very
+plausibly fine, and the app said otherwise.
+
+Fix: `PriceQuote.exactModel`, a required boolean the model must set honestly.
+Only exact-model quotes may drive a verdict; substituted ones still render, as
+context, dimmed and pilled "different model". Three properties worth preserving:
+
+- It **fails closed** — missing or malformed means `false`. A missing verdict
+  costs nothing; a confident wrong one is the bug.
+- The green "cheapest" marker follows the **verdict**, not row 0. Highlighting a
+  cheaper substituted price would point at the number the app just refused to
+  judge on.
+- Verified in **both** directions against the live API, which matters: a flag
+  stuck at `false` would silently suppress every verdict forever and look fine
+  from the D45 case alone. D40 (real) → 6 of 6 exact, verdict shown. D45
+  (nonexistent) → 0 of 5 exact, verdict suppressed.
+
+**6. `/api/prices` is unreliable in five distinct ways. Read this before
+designing the retry in task 3.** Individually each is rare and explainable;
+together they mean the route's output is far less dependable than the UI implies.
+Observed in a single session on one product:
+
+| mode | what it looks like |
+|---|---|
+| ungrounded success | quotes, but no citations and no Search Suggestions (finding #3) |
+| timeout | `AbortError` at the 50s deadline → clean `504` |
+| upstream error | HTTP 503 from the API, ~24–36s |
+| empty success | HTTP 200, grounded, **zero quotes**, for a query that works on retry |
+| slow success | 200 at 46–48s, i.e. inside 50s with almost nothing to spare |
+
+Consecutive empty runs happen — six in a row at one point, while a different
+query kept working throughout. **This is why task 3 needs a decision rather than
+a reflexive retry:** a retry addresses only the first row, costs a second billed
+search, and cannot fit in the budget anyway (see finding #2).
+
+Measurement caveat, because it wasted time once: an error response has no
+`quotes` key, so naive test scripts count it as "zero quotes" and make timeouts
+look like empty results. Always check the HTTP status alongside the body.
+
 ## Gotchas already paid for (do not rediscover)
 
 - **In a HK electronics shop, the model number is not on the product — it is on
@@ -252,6 +307,34 @@ data where dealers provide it rather than discarding the field.
   - The SDK retries **5 times by default** (`HttpRetryOptions.attempts`). Inside
     a 60s function budget that can stack attempts until the platform kills the
     function. `/api/prices` caps it at 2.
+- **Grounding citations are keyed by TITLE, not by URL host.** Every citation URL
+  is a `vertexaisearch.cloud.google.com/grounding-api-redirect/…`, so parsing the
+  host off the URL returns Google for all of them and matches nothing. Google puts
+  the real source domain in the title (`yohohongkong.com`). `withBestLinks()` in
+  `/api/prices` depends on this.
+- **A citation's destination cannot be inspected server-side.** It is an opaque
+  redirect; resolving 8 of them costs 8 HTTP round trips inside a 50s budget that
+  successful searches already consume 46–48s of. Link-quality heuristics
+  therefore run on the model's visible URL only. Resolving them once by hand gave
+  **7 of 9 real product pages** — the other two were a category page and, for
+  HKTVmall, a literal search URL. So a citation is a better bet than a home page,
+  not a guarantee.
+- **Model-written `url` values are mostly shop home pages** — measured 4 of 5 on
+  one run. Both the prompt and `withBestLinks()` exist to fix this; after both,
+  0 of 6 were bare. Do not assume the model returns product URLs.
+- **Some retailers cannot be deep-linked at all, and that is not a bug to fix.**
+  HKTVmall's own grounding citation is a search URL because that is what Google
+  indexed. A shop that exposes its catalogue only through search or category URLs
+  gives every available link the same shape.
+- **Two retailer-side behaviours that look like app bugs and are not.** HKTVmall
+  serves *different HTML by user-agent* (1.45MB mobile vs 2.04MB desktop for the
+  same URL), so clicking a link from a narrow desktop window shows the desktop
+  site — it will render mobile on a real phone. And iOS shows an
+  `Open in "HKTVmall"?` prompt because the retailer's page triggers an app
+  deep-link. Neither is worth engineering around. **Test on a real phone**
+  (`http://<lan-ip>:3040`); several behaviours differ from a narrow desktop window.
+- **`sessionStorage` persistence in `app/page.tsx` is a STAND-IN for task 8**, not
+  a parallel feature. `/api/scans` should replace it, not sit alongside it.
 - **Model is `gemini-flash-latest`**, an alias. Pinned versions 404 for new keys.
 - `.gitignore` uses the broad `.env*` — a narrower rule once missed a
   `.env.local.backup-*` containing live credentials.
@@ -282,11 +365,16 @@ it is written out here.
    next time you are in a shop.
 2. ~~Fix the `/api/prices` duration budget~~ — **DONE.** `maxDuration` 60, 50s
    `abortSignal`, retries capped at 2, clean `504` on timeout. Both paths verified.
-3. Retry `/api/prices` once when `grounded` comes back false, so an ungrounded
-   recollection can't reach the UI (finding #3). **Does not fit naively:** successes
-   run 14–49s against the 50s deadline set in item 2. Either shorten the first
-   attempt's deadline to leave room, or accept the ungrounded result and rely on
-   the warning `app/page.tsx` already renders. Decide before building.
+3. **Decide** what to do about `/api/prices` reliability — this is a design call,
+   not a coding task, and "retry when ungrounded" is the wrong framing for it.
+   Read finding #6 first: there are **five** failure modes and a retry addresses
+   one of them, costs a second billed search, and does not fit the budget anyway
+   (successes already run 46–48s against a 50s deadline). Options: shorten the
+   first attempt's deadline to leave room; accept ungrounded results and rely on
+   the warning `app/page.tsx` already renders; or surface reliability honestly in
+   the UI. Recommendation on record: **accept and warn**, because shortening the
+   deadline would convert currently-succeeding slow searches into failures —
+   trading a rare, already-warned problem for a new common one.
 4. Gate the missing-model warning in `app/page.tsx` by category; it fires spuriously
    on anything without a model number (see the defect note under finding #1).
 5. **Watch for `tagPrice: null` on a tag that clearly shows a price.** Seen once
