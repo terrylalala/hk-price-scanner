@@ -66,6 +66,13 @@ interface SavedScan {
   identity: ProductIdentity | null;
   draft: Draft;
   result?: PriceResult | null;
+  /**
+   * Whether photos[0] is a crop, in which case photos[1] is the wide shot it
+   * came from. Stored as a flag rather than storing the wide photo twice: it is
+   * already in `photos`, and a second copy of a 1600px base64 JPEG is exactly
+   * the kind of thing that pushes this over the sessionStorage quota.
+   */
+  cropped?: boolean;
 }
 
 /**
@@ -107,8 +114,17 @@ export default function Home() {
    * fabricated model number.
    */
   const [photos, setPhotos] = useState<CapturedImage[]>([]);
-  /** Whether the zoom-to-one-product cropper is open over the confirm step. */
+  /** Whether the draw-a-box cropper is open over the confirm step. */
   const [cropping, setCropping] = useState(false);
+  /**
+   * Whether photos[0] is a crop of photos[1].
+   *
+   * Needed because the cropper must ALWAYS open on the original wide shot. Left
+   * to itself it would crop photos[0], which after one crop is the crop — so
+   * you could narrow down but never change your mind and pick a different
+   * product, which is the thing people actually want on a shelf of fifty.
+   */
+  const [cropped, setCropped] = useState(false);
   const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [draft, setDraft] = useState<Draft>({
     name: "",
@@ -135,6 +151,9 @@ export default function Home() {
           // `photo` is the pre-multi-photo shape; keep reading it so a scan
           // saved by an older build still restores.
           setPhotos(s.photos ?? (s.photo ? [s.photo] : []));
+          // Only meaningful with a wide shot to fall back to; an older saved
+          // scan has no flag and is treated as uncropped.
+          setCropped(!!s.cropped && (s.photos?.length ?? 0) > 1);
           setIdentity(s.identity);
           setDraft(s.draft);
           setResult(s.result ?? null);
@@ -156,11 +175,11 @@ export default function Home() {
         sessionStorage.removeItem(SCAN_KEY);
         return;
       }
-      save({ photos, identity, draft, result });
+      save({ photos, identity, draft, result, cropped });
     } catch {
       // Quota or private-mode failures are non-fatal; the app still works.
     }
-  }, [restored, phase, photos, identity, draft, result]);
+  }, [restored, phase, photos, identity, draft, result, cropped]);
 
   // The scan stays on one screen and results append below it, so after a search
   // the interesting part is off-screen. Bring it into view rather than leaving
@@ -170,8 +189,15 @@ export default function Home() {
     resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [phase]);
 
+  /**
+   * The photo the cropper works from: always the original wide shot, never a
+   * crop. useCrop() stores it as photos[1], so it survives repeated recropping.
+   */
+  const cropSource = cropped ? (photos[1] ?? null) : (photos[0] ?? null);
+
   /** Identify from the first photo. */
   function identify(img: CapturedImage) {
+    setCropped(false);
     return identifyFrom([img]);
   }
 
@@ -191,9 +217,23 @@ export default function Home() {
    * weeks later.
    */
   function useCrop(crop: CapturedImage) {
-    const wide = photos[0];
+    const wide = cropSource;
     setCropping(false);
+    setCropped(!!wide);
     return identifyFrom(wide ? [crop, wide] : [crop], [crop]);
+  }
+
+  /**
+   * Throw the crop away and go back to the whole photo.
+   *
+   * Re-identifies rather than restoring the previous answer: the identity and
+   * draft were overwritten by the crop, and re-reading the wide shot is a cheap
+   * ungrounded call. It also keeps one rule — what you see is what was read.
+   */
+  function undoCrop() {
+    if (!cropSource) return;
+    setCropped(false);
+    return identifyFrom([cropSource]);
   }
 
   /**
@@ -335,6 +375,8 @@ export default function Home() {
     setUnreadable(false);
     setDistrict("");
     setPhotos([]);
+    setCropped(false);
+    setCropping(false);
     setIdentity(null);
     setResult(null);
     setDraft({ name: "", brand: "", model: "", tagPrice: "", packQuantity: "1" });
@@ -414,6 +456,8 @@ export default function Home() {
             photos={photos}
             onAddPhoto={addPhoto}
             onZoom={() => setCropping(true)}
+            onUndoCrop={undoCrop}
+            cropped={cropped}
             identity={identity}
             draft={draft}
             onChange={setDraft}
@@ -423,11 +467,12 @@ export default function Home() {
           />
         )}
 
-        {/* Full-screen over the confirm step. Crops the FIRST photo, which is
-            the one identification is currently based on. */}
-        {cropping && photos[0] && (
+        {/* Full-screen over the confirm step. Always crops the ORIGINAL wide
+            shot, never the current crop, so you can change your mind about
+            which product you meant instead of only narrowing further. */}
+        {cropping && cropSource && (
           <PhotoCropper
-            image={photos[0]}
+            image={cropSource}
             onCancel={() => setCropping(false)}
             onCrop={useCrop}
           />
@@ -514,6 +559,8 @@ function ConfirmStep({
   photos,
   onAddPhoto,
   onZoom,
+  onUndoCrop,
+  cropped,
   identity,
   draft,
   onChange,
@@ -524,6 +571,8 @@ function ConfirmStep({
   photos: CapturedImage[];
   onAddPhoto: (img: CapturedImage) => void;
   onZoom: () => void;
+  onUndoCrop: () => void;
+  cropped: boolean;
   identity: ProductIdentity;
   draft: Draft;
   onChange: (d: Draft) => void;
@@ -576,10 +625,32 @@ function ConfirmStep({
       {photos.length > 0 && (
         <div className="card center">
           <button className="btn block alt" onClick={onZoom} disabled={busy}>
-            Wrong product? Draw a box around the one you mean
+            {cropped
+              ? "Pick a different product"
+              : "Wrong product? Draw a box around the one you mean"}
           </button>
+
+          {/*
+            Once a crop exists there are two ways to change your mind, and they
+            are genuinely different: redraw on the same shelf photo, or discard
+            the crop entirely and go back to reading the whole thing. Offering
+            only the first would strand anyone who cropped by mistake.
+          */}
+          {cropped && (
+            <button
+              className="btn quiet small"
+              style={{ marginTop: 10 }}
+              onClick={onUndoCrop}
+              disabled={busy}
+            >
+              Undo crop — use the whole photo
+            </button>
+          )}
+
           <p className="note" style={{ marginTop: 8 }}>
-            Best for shelf photos with several products and price tags.
+            {cropped
+              ? "Draws on the original shelf photo again, not on this crop."
+              : "Best for shelf photos with several products and price tags."}
           </p>
         </div>
       )}
