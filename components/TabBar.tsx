@@ -25,7 +25,9 @@ const TABS: { id: Tab; label: string; icon: string; iconActive: string }[] = [
   { id: "scan", label: "Scan", icon: "◎", iconActive: "◉" },
   { id: "history", label: "History", icon: "◇", iconActive: "◆" },
   { id: "watch", label: "Wishlist", icon: "☆", iconActive: "★" },
-  { id: "treasures", label: "Treasures", icon: "◈", iconActive: "◆" },
+  // Five-sided, so it reads as a cut gem and — more usefully — does not
+  // collide with History's ◇/◆, which ◈ did at tab-bar size.
+  { id: "treasures", label: "Treasures", icon: "⬠", iconActive: "⬟" },
   { id: "settings", label: "Settings", icon: "○", iconActive: "●" },
 ];
 
@@ -49,7 +51,11 @@ export default function TabBar({
               aria-label={t.label}
               aria-current={isActive ? "page" : undefined}
             >
-              <span className="ico">{isActive ? t.iconActive : t.icon}</span>
+              {/* data-tab lets one icon be size-corrected without giving every
+                  tab a bespoke class; ⬠/⬟ render narrower than the rest. */}
+              <span className="ico" data-tab={t.id}>
+                {isActive ? t.iconActive : t.icon}
+              </span>
               <span>{t.label}</span>
             </button>
           );

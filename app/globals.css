@@ -621,9 +621,25 @@ a {
   gap: 3px;
 }
 
+/* A FIXED box every glyph is centred in, rather than letting each one's own
+   metrics set the row height. Without it, resizing a single icon to match the
+   others optically also made it taller, which pushed that one label out of line
+   with the rest. Now size is a per-icon concern and layout is not. */
 .tab .ico {
   font-size: 1.15rem;
   line-height: 1;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The pentagon is drawn narrower than the other icons at the same font size —
+   measured 13px against 17–18px — so it reads as smaller rather than different.
+   Corrected optically rather than by swapping in a shape that fits the metrics
+   but not the meaning. */
+.tab .ico[data-tab="treasures"] {
+  font-size: 1.45rem;
 }
 
 .tab.active {
