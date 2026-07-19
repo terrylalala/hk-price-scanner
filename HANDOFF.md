@@ -245,8 +245,14 @@ data where dealers provide it rather than discarding the field.
 - `.gitignore` uses the broad `.env*` — a narrower rule once missed a
   `.env.local.backup-*` containing live credentials.
 - `.env.local` currently holds only `GEMINI_API_KEY`, copied from the Calorie
-  Tracker. **The two apps share one key and therefore one quota.** Consider a
-  separate key so usage is attributable per app.
+  Tracker. **The two apps share one key and therefore one quota** — Gemini limits
+  are per *project*, not per key, so the two apps can also rate-limit each other.
+  This was reviewed and **deliberately left as-is until deploy**; the fix and the
+  reasoning live under task 10. Do not "tidy this up" earlier — splitting now
+  moves the app onto a fresh free-tier project mid-testing for a benefit that
+  does not exist until there is production traffic.
+- Separating the key buys **attribution and rate-limit isolation, not
+  protection**. Protection is `lib/rateLimit.ts`. Do not conflate them.
 - Grounding is **billed per search query**, so `lib/rateLimit.ts` is a cost
   control, not just abuse protection. Caps are on by default.
 - When deploying: Vercel's "Redeploy" re-runs the **same commit**. Verify the
@@ -279,6 +285,26 @@ it is written out here.
 8. `/api/advice` buying-advice route.
 9. Create the **public** GitHub repo (see the repo section above).
 10. Neon database + Vercel project, then verify the deployed commit SHA.
+    - **Give Price Scanner its own `GEMINI_API_KEY`, in its own Google Cloud
+      project, at this step — not before and not after.** Deliberately deferred
+      to here after weighing it: the benefit is attribution, which does not exist
+      until there is real traffic, and creating a fresh free-tier project earlier
+      risks tighter grounding allowances during the heaviest testing period. At
+      deploy you are setting env vars and making a billing decision anyway, so it
+      costs almost nothing.
+    - **It cannot be done retroactively.** Once both apps run live against one
+      project you cannot split a bill or reconstruct which app spent what. This
+      is the last cheap moment.
+    - A second key in the *same* project changes nothing — Gemini rate limits and
+      quota are enforced **per project, not per key**
+      (<https://ai.google.dev/gemini-api/docs/rate-limits>). It must be a new
+      project.
+    - Set the key in **Vercel's environment variables**, never in the repo — this
+      repo is public. Local dev may keep sharing the Calorie Tracker's key; local
+      volume is trivial and not worth attributing.
+    - Note the new project starts on the **free tier**. Grounding is billed per
+      search query, so check whether billing needs enabling to match current
+      behaviour.
 
 The plan file referenced at the top predates the real-photo testing. Where it and
 this document disagree, **this document is newer** — in particular the plan still
