@@ -96,14 +96,6 @@ interface CreateBody {
    * full image for any index without one.
    */
   thumbsBase64?: string[];
-  /**
-   * A previous scan this one supersedes: the same photo session searched again
-   * in the same mode. If set, that row (and its Blob photos) is deleted AFTER
-   * this new row is safely inserted, so History keeps only the latest search
-   * per mode rather than a row per retry. See the delete in POST for the guard
-   * that stops it from clobbering a saved (watching) scan.
-   */
-  replaceId?: string;
 }
 
 /** ~10MB of base64. The client downscales to 1600px, so this is a sanity bound. */

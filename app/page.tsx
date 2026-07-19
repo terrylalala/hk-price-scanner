@@ -84,14 +84,6 @@ interface SavedScan {
    * exact search returns nothing for a description with no model.
    */
   mode?: SearchMode;
-  /**
-   * The saved scan id per mode for this session, so "latest per mode" survives a
-   * reload. Without persisting it, a reload drops the in-memory ids and the next
-   * search stacks a fresh History row instead of replacing — which on the iOS
-   * home-screen app, where the OS reloads a suspended app freely, is the common
-   * case rather than the edge one.
-   */
-  savedIds?: Partial<Record<SearchMode, string>>;
 }
 
 /**
@@ -163,16 +155,6 @@ export default function Home() {
   const [result, setResult] = useState<PriceResult | null>(null);
   const [restored, setRestored] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
-  /**
-   * The id of the last scan saved in each mode for the CURRENT photo session.
-   *
-   * Lets a re-search supersede its predecessor instead of stacking a second
-   * History row: searching again in the same mode replaces that row, while
-   * switching exact↔similar leaves the other mode's row untouched. Reset with
-   * the rest of the session in reset(); a ref because it must not trigger a
-   * render and its value is only read at save time.
-   */
-  const savedScanIds = useRef<Partial<Record<SearchMode, string>>>({});
 
   // Restore a scan in progress. Without this, anything that reloads the page —
   // browser back after tapping a shop link, a swipe-back gesture, an OS tab
@@ -197,9 +179,6 @@ export default function Home() {
           // Prefer the mode the result was produced with; fall back to the
           // saved choice, then to exact.
           setMode(s.result?.mode ?? s.mode ?? "exact");
-          // Restore the per-mode saved ids so a re-search after this reload
-          // replaces the existing History row instead of stacking a new one.
-          savedScanIds.current = s.savedIds ?? {};
           setPhase(s.result ? "results" : "confirm");
         }
       }
@@ -218,7 +197,7 @@ export default function Home() {
         sessionStorage.removeItem(SCAN_KEY);
         return;
       }
-      save({ photos, identity, draft, result, cropped, mode, savedIds: savedScanIds.current });
+      save({ photos, identity, draft, result, cropped, mode });
     } catch {
       // Quota or private-mode failures are non-fatal; the app still works.
     }
@@ -393,7 +372,6 @@ export default function Home() {
    */
   async function saveScan(priced: PriceResult) {
     if (!identity) return;
-    const savedMode: SearchMode = priced.mode ?? mode;
     try {
       // Stored already normalised: history holds comparable numbers, and
       // lib/scans.ts documents that a saved scan is always packQuantity 1.
@@ -425,38 +403,13 @@ export default function Home() {
           // Sent from the client because the browser already holds the decoded
           // bitmap; see CapturedImage.thumbBase64.
           thumbsBase64: photos.map((p) => p.thumbBase64),
-          // A retry in this same mode this session supersedes its predecessor,
-          // so History shows one row per mode rather than one per search. Absent
-          // on the first search of a mode, which is exactly when there is
-          // nothing to replace.
-          replaceId: savedScanIds.current[savedMode],
         }),
       });
       if (!res.ok && res.status !== 501) {
         // 501 is the expected answer with no database configured, not a fault.
+        // Deduping to one row per product now happens server-side, keyed on the
+        // identified product, so the client no longer tracks saved ids.
         console.warn("[saveScan] failed", res.status, await res.text());
-        return;
-      }
-      if (res.ok) {
-        // Remember this row so the next search in the same mode replaces it
-        // rather than stacking a duplicate.
-        const data = (await res.json()) as { scan?: { id?: string } };
-        if (data.scan?.id) {
-          savedScanIds.current[savedMode] = data.scan.id;
-          // Persist immediately. This id lands AFTER the normal persist effect
-          // ran (on setResult), and updating a ref does not trigger another, so
-          // without this write a reload before the next state change would lose
-          // the id and the next search would stack a duplicate row.
-          save({
-            photos,
-            identity,
-            draft,
-            result: priced,
-            cropped,
-            mode,
-            savedIds: savedScanIds.current,
-          });
-        }
       }
     } catch (err) {
       console.warn("[saveScan] failed", err);
@@ -474,9 +427,6 @@ export default function Home() {
     setIdentity(null);
     setResult(null);
     setDraft({ name: "", brand: "", model: "", tagPrice: "", packQuantity: "1" });
-    // A new photo is a new session: its searches must not replace the last
-    // session's History rows.
-    savedScanIds.current = {};
   }
 
   /**
