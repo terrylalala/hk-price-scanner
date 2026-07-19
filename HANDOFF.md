@@ -539,6 +539,35 @@ beyond family, since a shared password cannot be revoked from one person.
 
 ## Gotchas already paid for (do not rediscover)
 
+- **A feature can be "done" on the server and invisible in the app.** Photo
+  storage shipped complete — Blob upload, `photo_url`/`photo_urls`, an
+  ownership-checked `/api/photo/[id]`, `hasPhoto`/`photoCount` on the client
+  type, *and the CSS* — while no component ever rendered an `<img>`. It was
+  recorded as done and reported as a bug by the user. The written-but-unused CSS
+  is what made it look finished. **Check the rendered screen, not the route.**
+- **Blob serves bytes; it does not resize them.** A 52px list thumbnail was
+  therefore downloading the full 1600px original (642 KB). Thumbnails are made
+  **client-side at capture** (`THUMB_DIM = 320` in `CameraCapture.tsx`) because
+  the browser already holds the decoded bitmap, and stored as separate objects
+  in `thumb_urls`. 642 KB → 31 KB, 21×.
+  - Measured on localhost, thumb vs full was 0.57s vs 0.77s: a **~0.5s fixed
+    Blob round-trip dominates**, so the win is bytes on cellular, not latency
+    here. Do not expect the serve time to drop proportionally.
+  - The first timings that prompted this (2.5–9.6s) included route compilation.
+    Warm numbers are the honest ones.
+- **Never link to `/api/photo` to show a photo full-size.** It is a navigation
+  *out* of the SPA: the image renders at native size with no fit-to-screen, and
+  Back returns to the **Scan tab**, because the selected tab and the open detail
+  are component state a reload discards. That is a user-reported bug, now fixed
+  with an in-app overlay in `ScanDetail`.
+- **The preview tool's screenshots composite fixed-position layers without their
+  background**, so a full-screen overlay photographs as transparent even when it
+  is not. Verify overlays with computed style plus `elementFromPoint`, not the
+  screenshot — the backdrop above looked broken and was not.
+- **Anything added to `photo_urls` must also be added to the DELETE path.**
+  Thumbnails would otherwise reproduce the orphaned-blob leak already proven
+  once (714 KB stranded), just smaller and twice as many.
+
 - **In a HK electronics shop, the model number is not on the product — it is on
   the small printed spec card beside it.** The capture prompt therefore asks for
   the spec/price card, not the laptop. This looks like a cosmetic copy change and
