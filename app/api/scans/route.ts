@@ -260,49 +260,57 @@ export async function POST(req: NextRequest) {
       returning *
     `) as unknown as ScanRow[];
 
-    // "Latest per mode": a re-search of the same photo in the same mode replaces
-    // its predecessor. Done AFTER the insert so a failed save never loses the
-    // old row, and scoped by user_id AND watching=false so it can only ever
-    // remove an unsaved scan from this same session — never a scan the user has
-    // deliberately saved to Wishlist, and never someone else's row. mode is
-    // matched too so switching exact↔similar keeps both, as intended.
-    if (typeof body.replaceId === "string" && body.replaceId && body.replaceId !== id) {
-      try {
-        const removed = (await sql`
-          delete from scans
-          where id = ${body.replaceId} and user_id = ${uid}
-            and watching = false and mode = ${body.mode === "similar" ? "similar" : "exact"}
-          returning photo_url, photo_urls, thumb_urls
-        `) as unknown as {
-          photo_url: string | null;
-          photo_urls: string[] | null;
-          thumb_urls: string[] | null;
-        }[];
+    // Keep ONE History row per identified product + mode. A re-search of the
+    // same product supersedes the previous unsaved row instead of stacking a
+    // new one — and because this keys on the product itself, not on the photo or
+    // any client-side session id, it holds across a new photo, a page reload, or
+    // an app restart (the iOS home-screen case where in-memory tracking was
+    // always lost). Done AFTER the insert so a failed save never loses the old
+    // row.
+    //
+    // Scoped so it only ever removes THIS user's UNSAVED rows of the SAME product
+    // in the SAME mode: a saved (watching) row is kept, exact and similar stay
+    // separate, and a genuinely different product keeps its own row. On a crowded
+    // shelf where identification is unstable, different reads produce different
+    // keys and correctly stay separate — they are different products.
+    //
+    // The key is the model when there is one, else the product name — the same
+    // string shown as the row title — compared case- and whitespace-insensitively.
+    const productKey = str(p.model) || name;
+    const modeVal = body.mode === "similar" ? "similar" : "exact";
+    try {
+      const removed = (await sql`
+        delete from scans
+        where user_id = ${uid} and id <> ${id} and watching = false
+          and mode = ${modeVal}
+          and lower(btrim(case when model <> '' then model else product_name end))
+              = lower(btrim(${productKey}))
+        returning photo_url, photo_urls, thumb_urls
+      `) as unknown as {
+        photo_url: string | null;
+        photo_urls: string[] | null;
+        thumb_urls: string[] | null;
+      }[];
 
-        // Free the superseded row's Blob objects. Blob has no referential
-        // integrity to Postgres, so an un-deleted photo would leak storage
-        // exactly as documented in /api/scans/[id] DELETE.
-        const urls =
-          removed.length === 0
-            ? []
-            : Array.from(
-                new Set(
-                  [
-                    ...(removed[0].photo_urls ?? []),
-                    ...(removed[0].thumb_urls ?? []),
-                    removed[0].photo_url,
-                  ].filter((u): u is string => !!u),
-                ),
-              );
-        if (urls.length && hasBlob()) {
-          await Promise.all(urls.map((u) => del(u)));
-        }
-      } catch (err) {
-        // The new scan is saved, which is what matters. A failed replace leaves
-        // a duplicate old row behind — untidy, not lost data — so it is logged
-        // rather than allowed to fail the request.
-        console.warn("[/api/scans POST] replace of superseded scan failed", err);
+      // Free every superseded row's Blob objects — there can be several when an
+      // earlier pile-up is being collapsed. Blob has no referential integrity to
+      // Postgres, so an un-deleted photo leaks storage exactly as documented in
+      // /api/scans/[id] DELETE.
+      const urls = Array.from(
+        new Set(
+          removed
+            .flatMap((r) => [...(r.photo_urls ?? []), ...(r.thumb_urls ?? []), r.photo_url])
+            .filter((u): u is string => !!u),
+        ),
+      );
+      if (urls.length && hasBlob()) {
+        await Promise.all(urls.map((u) => del(u)));
       }
+    } catch (err) {
+      // The new scan is saved, which is what matters. A failed dedupe leaves an
+      // older duplicate behind — untidy, not lost data — so it is logged rather
+      // than allowed to fail the request.
+      console.warn("[/api/scans POST] product dedupe failed", err);
     }
 
     return NextResponse.json({ scan: rowToScan(rows[0]) }, { status: 201 });
