@@ -214,6 +214,17 @@ data where dealers provide it rather than discarding the field.
   the spec/price card, not the laptop. This looks like a cosmetic copy change and
   is not: it is the cheapest available fix for finding #1, because a photo of the
   product itself structurally cannot yield a SKU.
+- **The scan flow is deliberately ONE screen with no router and no `pushState`.**
+  Results append below the scan rather than replacing it. Searching used to swap
+  the confirm step out, which hid the photo and product details exactly when they
+  were most useful for reading the prices, and made browser back leave the app
+  entirely — a phase change creates no history entry to return to. If you find
+  yourself "fixing" the dead back button by adding routing, you are reintroducing
+  the navigation step that was removed on purpose. Two supporting details that
+  are easy to undo by accident: the confirm form **collapses to a compact summary**
+  once results exist (keeping it full-size pushes the verdict below the fold), and
+  **Edit clears the results** (otherwise edited inputs sit above stale prices for
+  a product the user is no longer looking at).
 - **Tap-to-select was considered and rejected as the next step.** It solves
   *disambiguation* (which tag belongs to which item) but not *specificity* —
   cropping to one laptop still yields no model number, and specificity is what
@@ -278,13 +289,23 @@ it is written out here.
    the warning `app/page.tsx` already renders. Decide before building.
 4. Gate the missing-model warning in `app/page.tsx` by category; it fires spuriously
    on anything without a model number (see the defect note under finding #1).
-5. Decide the district filter's fate (finding #4) — online/in-store split plus a
+5. **Watch for `tagPrice: null` on a tag that clearly shows a price.** Seen once
+   on a synthetic canvas tag reading `HK$469`, where the product name and model
+   were both read correctly. Probably an artefact of the generated image, so it
+   is *not* confirmed on a real photo — but if it recurs in the field it means
+   the price path is failing **silently**, which is the worst way for it to fail:
+   the verdict simply disappears and nothing looks broken.
+6. Soften the unreadable-photo path. When `/api/identify` cannot parse a result it
+   returns the user to the camera with a red error banner. Correct, but blunt —
+   it reads as a fault rather than "try a clearer shot". Reproduces reliably by
+   feeding an image whose text did not render.
+7. Decide the district filter's fate (finding #4) — online/in-store split plus a
    manually-set home district, but keep district data where dealer listings supply it.
-6. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
-7. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
-8. `/api/advice` buying-advice route.
-9. Create the **public** GitHub repo (see the repo section above).
-10. Neon database + Vercel project, then verify the deployed commit SHA.
+8. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
+9. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
+10. `/api/advice` buying-advice route.
+11. Create the **public** GitHub repo (see the repo section above).
+12. Neon database + Vercel project, then verify the deployed commit SHA.
     - **Give Price Scanner its own `GEMINI_API_KEY`, in its own Google Cloud
       project, at this step — not before and not after.** Deliberately deferred
       to here after weighing it: the benefit is attribution, which does not exist
