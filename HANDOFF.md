@@ -75,6 +75,28 @@ the sibling project, and the same trap would return if it is ever flipped back:
 (`today | history | coach | settings`) and is now retabbed to
 `scan | history | watch | settings` and wired up.
 
+## Full chain verified on real products (19 Jul)
+
+Every layer run end to end on three real HK shop photos, not synthetic tags:
+
+| product | shop | best exact-model | verdict |
+|---|---|---|---|
+| Panasonic ES3833 | $248 | $157 Fortress | You can do better |
+| TP-Link M8550 | $2298 | $2289 Price.com.hk | **Good price** |
+| Oral-B PRO 1 1000 | $369 | $250 Price.com.hk | You can do better |
+
+All grounded, **every quote exactModel true**, real retailers (Fortress, HKTVmall,
+Mannings, Watsons, CityLink). Saved to the database and visible in History.
+
+The advice layer produced local knowledge a price table cannot: Shun Hing (信興)
+as Panasonic's HK warranty agent, Everbest/Sunder as TP-Link distributors,
+parallel-import 5G routers possibly lacking HK band support, and the company-chop
+receipt stamp that validates a shop warranty. It took opposite positions
+correctly — walk away from the shaver, buy the router on the spot.
+
+The TP-Link case is the one that justifies the app: $2298 against a $2289 market
+is a fair price you would never confirm without checking.
+
 ## Verified findings that should shape the next session
 
 **1. Gate 1 FAILED on a real photo — but not the way this doc predicted.**
@@ -691,6 +713,25 @@ it is written out here.
     - Note the new project starts on the **free tier**. Grounding is billed per
       search query, so check whether billing needs enabling to match current
       behaviour.
+
+
+13. **Persist advice** (candidate, evidence-gated). `/api/advice` output is a
+    billed call and is currently thrown away — there is no column, so reopening a
+    saved scan regenerates it from scratch. The advice is genuinely worth keeping:
+    on a real run it named Shun Hing (信興) as Panasonic's HK warranty agent and
+    warned that parallel-import 5G routers may lack Hong Kong band support.
+    Needs an `advice text` column, so it costs a migration — `ensureSchema()` only
+    does `create table if not exists`. **Do not build it until the regeneration is
+    actually annoying**; one wasted call is cheaper than a migration nobody needed.
+
+14. **Attach photos to saved scans** (blocked on Blob). `photo_url` is always null
+    so `hasPhoto` is false and `/api/photo/[id]` has nothing to serve. History
+    shows product names with no pictures. `hasBlob()` already degrades cleanly, so
+    this is provisioning plus an upload path, not a fix.
+
+15. **Watch is a list, not a watch.** Nothing writes to `price_points`, so tracked
+    products never re-check and the table stays empty. Needs a re-check action or
+    a scheduled job before "Watch" means anything beyond a filter.
 
 The plan file referenced at the top predates the real-photo testing. Where it and
 this document disagree, **this document is newer** — in particular the plan still
