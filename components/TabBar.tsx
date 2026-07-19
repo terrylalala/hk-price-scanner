@@ -7,18 +7,25 @@
  * coach | settings`. Only the shape survived; the tabs themselves were wrong for
  * this app and were never wired up.
  *
- * "Wishlist" reuses the History list filtered to saved scans rather than being a
- * distinct view — there is no re-check mechanism yet (the `price_points` table
- * exists but nothing writes to it), so a separate component would duplicate the
- * list for no behavioural difference.
+ * "Wishlist" and "Treasures" both reuse the History list with a filter rather
+ * than being distinct views — there is no re-check mechanism yet (the
+ * `price_points` table exists but nothing writes to it), so separate components
+ * would duplicate the list for no behavioural difference.
+ *
+ * They filter on genuinely different things, which is why they are two tabs and
+ * not one: Wishlist is `watching`, set by hand on anything worth keeping.
+ * Treasures is every "find similar" search — things spotted with no price tag,
+ * filed automatically because that search is never an answer to "should I buy
+ * this now", only a note to come back to.
  */
 
-export type Tab = "scan" | "history" | "watch" | "settings";
+export type Tab = "scan" | "history" | "watch" | "treasures" | "settings";
 
 const TABS: { id: Tab; label: string; icon: string; iconActive: string }[] = [
   { id: "scan", label: "Scan", icon: "◎", iconActive: "◉" },
   { id: "history", label: "History", icon: "◇", iconActive: "◆" },
   { id: "watch", label: "Wishlist", icon: "☆", iconActive: "★" },
+  { id: "treasures", label: "Treasures", icon: "◈", iconActive: "◆" },
   { id: "settings", label: "Settings", icon: "○", iconActive: "●" },
 ];
 

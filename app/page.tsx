@@ -440,6 +440,10 @@ export default function Home() {
     scan: { h1: "Price Scanner", sub: "Is that Hong Kong shop price any good?" },
     history: { h1: "History", sub: "Every scan you have saved" },
     watch: { h1: "Wishlist", sub: "Things you saved to buy or price later" },
+    treasures: {
+      h1: "Treasures",
+      sub: "Things you spotted with no price tag",
+    },
     settings: { h1: "Settings", sub: "" },
   };
 
@@ -452,6 +456,7 @@ export default function Home() {
 
       {tab === "history" && <ScanList />}
       {tab === "watch" && <ScanList watchingOnly />}
+      {tab === "treasures" && <ScanList similarOnly />}
       {tab === "settings" && <SettingsTab />}
 
       {/*
@@ -1009,9 +1014,9 @@ function Results({
           */
           <div style={{ marginTop: 12 }}>
             <p className="note">
-              No Hong Kong prices came back. This search is unreliable and
-              sometimes returns nothing for a product it found a moment earlier,
-              so trying again is usually worth more than editing the name.
+              {similar
+                ? "Nothing came back from Hong Kong retailers. This search is unreliable and sometimes returns nothing for a description it handled a moment earlier, so trying again is usually worth more than rewriting it."
+                : "No Hong Kong prices came back. This search is unreliable and sometimes returns nothing for a product it found a moment earlier, so trying again is usually worth more than editing the name."}
             </p>
             <button
               className="btn block alt"
@@ -1020,9 +1025,14 @@ function Results({
             >
               Search again
             </button>
+            {/* The advice has to match the search that ran. Telling someone to
+                check a model number on a scarf — which has none, and was never
+                searched for by one — sends them looking for something that does
+                not exist. */}
             <p className="note" style={{ marginTop: 10 }}>
-              If it stays empty, the product may genuinely not be sold online in
-              Hong Kong — or the model number needs checking.
+              {similar
+                ? "If it stays empty, the description may be too broad to search on. Naming the kind of thing it is helps most — “silk scarf”, “leather tote”, “wool blazer” — and so does a colour or material."
+                : "If it stays empty, the product may genuinely not be sold online in Hong Kong — or the model number needs checking."}
             </p>
           </div>
         ) : (

@@ -45,9 +45,13 @@ export async function GET(req: NextRequest) {
       ? Math.min(Math.floor(limitParam), MAX_LIMIT)
       : DEFAULT_LIMIT;
 
-  // Optional filters, both indexed: `scans_day_idx` and `scans_watch_idx`.
+  // Optional filters. `day` and `watching` are indexed (`scans_day_idx`,
+  // `scans_watch_idx`); `mode` is not — Treasures is a small subset of an
+  // already small table, and an index earns its keep at a scale this will not
+  // reach. Revisit if that stops being true.
   const day = url.searchParams.get("day");
   const watching = url.searchParams.get("watching") === "true";
+  const similar = url.searchParams.get("mode") === "similar";
 
   try {
     await ensureSchema();
@@ -59,8 +63,11 @@ export async function GET(req: NextRequest) {
       : watching
         ? sql`select * from scans where user_id = ${uid} and watching = true
               order by ts desc limit ${limit}`
-        : sql`select * from scans where user_id = ${uid}
-              order by ts desc limit ${limit}`)) as unknown as ScanRow[];
+        : similar
+          ? sql`select * from scans where user_id = ${uid} and mode = 'similar'
+                order by ts desc limit ${limit}`
+          : sql`select * from scans where user_id = ${uid}
+                order by ts desc limit ${limit}`)) as unknown as ScanRow[];
 
     return NextResponse.json({ scans: rows.map(rowToScan) });
   } catch (err) {

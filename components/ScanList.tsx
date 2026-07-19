@@ -6,10 +6,10 @@ import ScanDetail from "./ScanDetail";
 import { districtById } from "@/lib/hkDistricts";
 
 /**
- * The saved-scan list, used for both the History and Wishlist tabs.
+ * The saved-scan list, used for the History, Wishlist and Treasures tabs.
  *
- * One component with a `watchingOnly` flag rather than two: Watch differs only
- * by a query filter. There is no re-check mechanism yet — `price_points` exists
+ * One component with filter flags rather than three: Wishlist and Treasures
+ * differ from History only by a query filter. There is no re-check mechanism yet — `price_points` exists
  * but nothing writes to it — so a separate component would be a copy of this
  * one with no behavioural difference.
  */
@@ -36,7 +36,14 @@ function verdictOf(scan: Scan): { tone: string; text: string } | null {
   return { tone: "poor", text: `HK$${Math.round(diff)} over` };
 }
 
-export default function ScanList({ watchingOnly = false }: { watchingOnly?: boolean }) {
+export default function ScanList({
+  watchingOnly = false,
+  /** Treasures: only scans produced by a "find similar" search. */
+  similarOnly = false,
+}: {
+  watchingOnly?: boolean;
+  similarOnly?: boolean;
+}) {
   const [scans, setScans] = useState<Scan[] | null>(null);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
@@ -45,7 +52,12 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
   const load = useCallback(async () => {
     setError("");
     try {
-      const res = await fetch(`/api/scans${watchingOnly ? "?watching=true" : ""}`);
+      const query = watchingOnly
+        ? "?watching=true"
+        : similarOnly
+          ? "?mode=similar"
+          : "";
+      const res = await fetch(`/api/scans${query}`);
       const data = await res.json();
       if (!res.ok) {
         // 501 is "no database", which is a configuration state rather than a
@@ -63,7 +75,7 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
       setError("Could not reach the server.");
       setScans([]);
     }
-  }, [watchingOnly]);
+  }, [watchingOnly, similarOnly]);
 
   useEffect(() => {
     void load();
@@ -117,7 +129,9 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
           <p className="note">
             {watchingOnly
               ? "Nothing saved yet. Tap ☆ on a scan in History to keep it here."
-              : "No saved scans yet. Scans are kept automatically once a price search finishes."}
+              : similarOnly
+                ? "Nothing here yet. Photograph something with no price tag — a jacket, a scarf, a bag — and choose \u201cFind similar to buy\u201d. Those searches are kept here automatically."
+                : "No saved scans yet. Scans are kept automatically once a price search finishes."}
           </p>
         </div>
       )}
