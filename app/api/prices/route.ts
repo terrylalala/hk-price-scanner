@@ -6,8 +6,40 @@ import { districtFromText } from "@/lib/hkDistricts";
 import { Citation, PriceQuote } from "@/lib/types";
 
 export const runtime = "nodejs";
-// Grounded search runs real web queries; it is slower than a plain call.
-export const maxDuration = 90;
+/**
+ * Grounded search runs real web queries, so it is slow: observed successes span
+ * 24–49s. This was 90, which Vercel's Hobby plan will not honour — it caps
+ * maxDuration at 60s. Asking for time the platform never grants is how a slow
+ * search became an opaque socket error rather than a clean timeout.
+ */
+export const maxDuration = 60;
+
+/**
+ * Deadline for the search, comfortably inside maxDuration so the route gets to
+ * return a real response instead of being killed mid-flight.
+ *
+ * Applied twice, because the two settings are NOT the same mechanism:
+ *
+ * - `abortSignal` is client-side and is the authoritative bound. It fires on
+ *   time and throws `AbortError`. The SDK retries up to 5 times by default
+ *   (HttpRetryOptions.attempts), which inside a 60s budget can silently stack
+ *   attempts until the platform kills the function; an AbortSignal cannot be
+ *   out-waited by a retry.
+ * - `httpOptions.timeout` is sent to Google as a server-side deadline, and it
+ *   has a **10s minimum**. Setting this below 10_000 does not produce a fast
+ *   timeout — it produces an immediate HTTP 400 `INVALID_ARGUMENT`
+ *   ("Manually set deadline 2s is too short"), which looks nothing like a
+ *   timeout and will send you hunting in the wrong place. Verified against
+ *   the live API.
+ */
+const SEARCH_TIMEOUT_MS = 50_000;
+
+/**
+ * One retry, not the SDK default of five. A grounded search that already takes
+ * ~40s cannot afford four more attempts inside a 50s deadline — the retries
+ * would be cut off by the abort anyway, having burned the whole budget.
+ */
+const SEARCH_ATTEMPTS = 2;
 
 /**
  * Find current Hong Kong prices for a product using Grounding with Google Search.
@@ -112,6 +144,11 @@ export async function POST(req: NextRequest) {
         // reply loses the JSON block while still looking plausible in prose.
         maxOutputTokens: 8192,
         temperature: 0.2,
+        abortSignal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+        httpOptions: {
+          timeout: SEARCH_TIMEOUT_MS,
+          retryOptions: { attempts: SEARCH_ATTEMPTS },
+        },
       },
     });
 
@@ -232,10 +269,51 @@ function extractCitations(meta: unknown): Citation[] {
   return out;
 }
 
+/**
+ * A search that ran out of time, or whose connection was dropped underneath us.
+ *
+ * Both arrive as generic transport failures, and both were previously reported
+ * to the shopper as "Unexpected server error" after a 60-second wait — which
+ * reads like a bug in the app rather than a search that took too long. The
+ * distinction matters because the useful advice differs: retrying a slow query
+ * verbatim usually fails again, whereas a narrower product name usually works.
+ */
+function isTimeout(err: unknown): boolean {
+  const e = err as { name?: unknown; message?: unknown; cause?: { code?: unknown } };
+  const name = typeof e?.name === "string" ? e.name : "";
+  const message = typeof e?.message === "string" ? e.message.toLowerCase() : "";
+  const code = typeof e?.cause?.code === "string" ? e.cause.code : "";
+
+  return (
+    name === "TimeoutError" ||
+    name === "AbortError" ||
+    code === "UND_ERR_SOCKET" ||
+    code === "UND_ERR_HEADERS_TIMEOUT" ||
+    code === "UND_ERR_BODY_TIMEOUT" ||
+    code === "ETIMEDOUT" ||
+    message.includes("aborted") ||
+    message.includes("timeout") ||
+    message.includes("fetch failed")
+  );
+}
+
 function handleError(err: unknown) {
   if (err instanceof MissingApiKeyError) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+
+  if (isTimeout(err)) {
+    console.warn("[/api/prices] search timed out or connection dropped", err);
+    return NextResponse.json(
+      {
+        error:
+          "The price search took too long and was stopped. Try a more specific product name — broad searches take the longest.",
+        code: "search-timeout",
+      },
+      { status: 504 },
+    );
+  }
+
   const status =
     typeof (err as { status?: unknown })?.status === "number"
       ? (err as { status: number }).status

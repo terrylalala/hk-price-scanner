@@ -158,9 +158,18 @@ route is written expecting time it will never get. Successful runs already reach
 
 <https://vercel.com/changelog/vercel-functions-for-hobby-can-now-run-up-to-60-seconds>
 
-**This changes the design of the retry in finding #3.** A naive "call it again"
-roughly doubles duration and would near-guarantee a breach. Any retry has to fit
-inside a ~50s total budget, not sit on top of a call that already takes 49s.
+**FIXED.** `maxDuration` is now 60, a 50s client-side `abortSignal` bounds the
+call, SDK retries are capped at 2 instead of 5, and a timeout returns a clean
+`504` with `code: "search-timeout"` and advice to narrow the product name —
+instead of "Unexpected server error" after a minute. Verified both paths: forced
+abort returns 504 in 2.2s; success path still returns grounded results with
+citations and Search Suggestions in 14–34s. See the timeout gotcha below.
+
+**This still changes the design of the retry in finding #3.** Observed successes
+run **14–49s against a 50s deadline** — there is no room for a second full call.
+A naive "call it again" cannot fit. Options: a shorter deadline on the first
+attempt, or accept the ungrounded result and rely on the warning the UI already
+renders.
 
 Also seen in today's logs: `finishReason=MAX_TOKENS` with `thoughtsTokenCount: 687`
 — the truncation the gotchas below warn about, still occurring in practice.
@@ -219,6 +228,19 @@ data where dealers provide it rather than discarding the field.
 - **`/api/prices` emits the JSON block BEFORE the prose.** First attempt put prose
   first, hit `maxOutputTokens`, and returned a perfectly plausible summary with the
   JSON silently missing. Order matters; so does the 8192 budget.
+- **`abortSignal` and `httpOptions.timeout` are NOT the same mechanism**, and the
+  difference costs an afternoon if you assume otherwise. Probed against the live
+  API with `@google/genai` 1.52.0:
+  - `abortSignal` is **client-side** and is the authoritative bound. Fires on
+    time, throws `AbortError`. Use this one.
+  - `httpOptions.timeout` is sent to Google as a **server-side deadline with a
+    10-second floor**. Below 10_000 it does not time out fast — it returns an
+    immediate HTTP **400 `INVALID_ARGUMENT`**: *"Manually set deadline 2s is too
+    short. Minimum allowed deadline is 10s."* That looks nothing like a timeout
+    and sends you hunting in the wrong place.
+  - The SDK retries **5 times by default** (`HttpRetryOptions.attempts`). Inside
+    a 60s function budget that can stack attempts until the platform kills the
+    function. `/api/prices` caps it at 2.
 - **Model is `gemini-flash-latest`**, an alias. Pinned versions 404 for new keys.
 - `.gitignore` uses the broad `.env*` — a narrower rule once missed a
   `.env.local.backup-*` containing live credentials.
@@ -241,13 +263,13 @@ it is written out here.
    a *multi-product electronics shelf* shot with the new spec-card framing, and a
    shelf label carrying both a model number *and* a price. Standing ask — grab one
    next time you are in a shop.
-2. **Fix the `/api/prices` duration budget (finding #2) — do this before item 3,
-   it constrains it.** Drop `maxDuration` from 90 to 60 to match the Hobby cap, and
-   add an explicit ~50s timeout so a slow search returns a clean actionable error
-   instead of a raw socket exception surfacing as "Unexpected server error".
+2. ~~Fix the `/api/prices` duration budget~~ — **DONE.** `maxDuration` 60, 50s
+   `abortSignal`, retries capped at 2, clean `504` on timeout. Both paths verified.
 3. Retry `/api/prices` once when `grounded` comes back false, so an ungrounded
-   recollection can't reach the UI (finding #3). **Must fit inside the ~50s budget
-   from item 2** — a naive second call does not.
+   recollection can't reach the UI (finding #3). **Does not fit naively:** successes
+   run 14–49s against the 50s deadline set in item 2. Either shorten the first
+   attempt's deadline to leave room, or accept the ungrounded result and rely on
+   the warning `app/page.tsx` already renders. Decide before building.
 4. Gate the missing-model warning in `app/page.tsx` by category; it fires spuriously
    on anything without a model number (see the defect note under finding #1).
 5. Decide the district filter's fate (finding #4) — online/in-store split plus a
