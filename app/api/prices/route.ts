@@ -50,15 +50,19 @@ const SEARCH_ATTEMPTS = 2;
  * the source links and Google's required Search Suggestions markup. So we ask
  * for JSON in the prose and parse it defensively instead.
  *
- * Thinking is DISABLED (`thinkingBudget: 0`), same as the vision route. It was
- * left on originally, on the theory that reconciling several sources is what
- * thinking is for. Measured against a real product (Tapo C220), that theory did
- * not hold: thinking added ~10s (27s → 17s) and produced no better answer —
- * same verdict, actually one FEWER real quote. The grounded results carry the
- * evidence; the model only has to report and compare them, which is not a task
- * that needs a reasoning budget. Turning it off is the single biggest lever on
- * this route's latency, and it widens the margin against the 60s platform kill
- * that the broad similar search was hitting.
+ * Thinking is kept ENABLED, unlike the vision route.
+ *
+ * It was briefly disabled as a latency win — measured at ~10s per search on one
+ * product with no worse an answer. But grounding turned out to be the cost: with
+ * thinking off, some searches came back weakly grounded — zero citations, so the
+ * "Sources" list vanished and every store link fell back to a homepage (the
+ * prompt's deliberate fallback when no real product URL was seen), and the Search
+ * Suggestions markup — which Google's terms REQUIRE us to render — cannot appear
+ * at all when a response is ungrounded. Reasoning appears to make the model
+ * invoke and reconcile search more reliably. Ten seconds is not worth trading
+ * real product links and a terms-required element for, especially since the big
+ * latency win this app needed came from switching identification to Flash-Lite
+ * (36s → 3s), not from here.
  */
 
 const SYSTEM_PROMPT = `You are a Hong Kong shopping researcher. Given a product, search for what it currently sells for IN HONG KONG and report real, specific prices you found.
@@ -258,12 +262,11 @@ export async function POST(req: NextRequest) {
         systemInstruction:
           mode === "similar" ? similarPrompt(similarScope) : SYSTEM_PROMPT,
         tools: [{ googleSearch: {} }],
-        // Off, and worth ~10s per search — see the header comment. The grounded
-        // results carry the evidence; reporting and comparing them does not need
-        // a reasoning budget.
-        thinkingConfig: { thinkingBudget: 0 },
-        // Generous: a truncated reply loses the JSON block while still looking
-        // plausible in prose.
+        // Thinking left ON deliberately — see the header comment. Disabling it
+        // saved ~10s but weakened grounding (lost citations, homepage-only links,
+        // and no terms-required Search Suggestions), which is not worth the time.
+        // Generous: thinking tokens draw from this budget too, and a truncated
+        // reply loses the JSON block while still looking plausible in prose.
         maxOutputTokens: 8192,
         temperature: 0.2,
         abortSignal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
