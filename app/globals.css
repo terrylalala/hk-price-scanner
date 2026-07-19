@@ -199,7 +199,7 @@ a {
      the padding drops it to where the eye expects it.
      Padding shifts the glyph by HALF its value — it shrinks the content box the
      glyph is then centred in — so 14px here is a 7px drop, not 14. */
-  padding-top: 14px;
+  padding-top: 8px;
 }
 
 .camera:active:not(:disabled) {
