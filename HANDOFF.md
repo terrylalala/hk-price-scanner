@@ -537,6 +537,41 @@ a shared history may be a feature ("we already priced this at HK$469"). Wait for
 someone to actually ask for separation. Revisit sooner if the app is shared
 beyond family, since a shared password cannot be revoked from one person.
 
+## Local dev runs on a SEPARATE Neon branch (19 Jul)
+
+`.env.local` points at the Neon **`dev`** branch; production (`main`) is
+untouched and is what Vercel injects. Verified by writing a row locally and
+confirming it never appeared on the deployed app.
+
+| | branch | endpoint | used by |
+|---|---|---|---|
+| production | `main` | `ep-restless-surf…` | Vercel, the phone |
+| local dev | `dev` | `ep-steep-salad…` | `.env.local` only |
+
+Why it exists: local dev previously shared the production database, so a testing
+session **consumed the real 40/day limit and locked the user out of their own
+app mid-shop**, and test rows appeared in their History. The counters live in
+`usage`, keyed by `user_id`, which is `'local'` for everyone — so there was no
+separation to rely on.
+
+- Both branches carry the same schema; `ensureSchema()` builds it either way.
+- Auto-delete is set to **Never**. Neon defaults new branches to *After 1 day*,
+  which would silently kill local dev the next morning with a connection error
+  that looks nothing like its cause.
+- **Still shared, deliberately:** the Gemini API key (so test searches spend the
+  real free tier and count against the HK$150 cap) and Blob storage. Bounded by
+  the spend cap; not worth separating at this volume.
+- To point local dev back at production temporarily, swap `DATABASE_URL` for the
+  `main` pooled string. Do not put the `dev` string into Vercel.
+
+**Secret-handling failure worth not repeating:** while preparing `.env.local`, a
+script printed commented-out lines verbatim and **leaked the production Neon
+password into the transcript**. It was rotated immediately (Neon → `main` →
+Roles → reset; the Vercel integration pushed the new value automatically, then a
+redeploy). When inspecting env files, print **variable names and whether a value
+is set — never the values**, and remember commented-out lines still hold live
+credentials.
+
 ## Gotchas already paid for (do not rediscover)
 
 - **A feature can be "done" on the server and invisible in the app.** Photo
