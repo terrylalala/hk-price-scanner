@@ -38,6 +38,69 @@ interface Draft {
 
 const SCAN_KEY = "price-scanner:scan";
 
+/**
+ * Categories whose products carry no model number, so the missing-model warning
+ * would be noise. Matched as substrings against the free-text category from
+ * /api/identify (e.g. "Wine", "Voice Recorder", "Ceiling light").
+ */
+const MODEL_LESS_CATEGORIES = [
+  "wine",
+  "beer",
+  "spirit",
+  "whisky",
+  "whiskey",
+  "sake",
+  "liquor",
+  "drink",
+  "beverage",
+  "juice",
+  "water",
+  "coffee",
+  "tea",
+  "food",
+  "snack",
+  "confection",
+  "chocolate",
+  "grocer",
+  "produce",
+  "fruit",
+  "vegetable",
+  "meat",
+  "seafood",
+  "supplement",
+  "vitamin",
+  "cosmetic",
+  "skincare",
+  "makeup",
+  "perfume",
+  "fragrance",
+  "shampoo",
+  "soap",
+  "detergent",
+  "clothing",
+  "apparel",
+  "shoe",
+  "book",
+  "stationery",
+];
+
+/**
+ * Whether a missing model number is worth warning about for this category.
+ *
+ * Deliberately a DENY-list, warning by default. The two failure modes are not
+ * symmetric: a spurious warning is mild noise, while a missed one lets the
+ * search price a different product and produce a confident wrong verdict — the
+ * bug this warning exists to prevent. So an unrecognised category still warns.
+ *
+ * The trigger was a bottle of wine: identification was perfect, but the warning
+ * told the shopper to "add the model from the label", which does not exist.
+ */
+function hasModelNumbers(category: string): boolean {
+  const c = category.trim().toLowerCase();
+  if (!c) return true;
+  return !MODEL_LESS_CATEGORIES.some((m) => c.includes(m));
+}
+
 interface SavedScan {
   photo?: CapturedImage | null;
   identity: ProductIdentity | null;
@@ -71,6 +134,7 @@ function save(scan: SavedScan) {
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
+  const [unreadable, setUnreadable] = useState(false);
   const [photo, setPhoto] = useState<CapturedImage | null>(null);
   const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [draft, setDraft] = useState<Draft>({
@@ -132,6 +196,7 @@ export default function Home() {
 
   async function identify(img: CapturedImage) {
     setError("");
+    setUnreadable(false);
     setPhoto(img);
     setPhase("identifying");
     try {
@@ -144,6 +209,17 @@ export default function Home() {
         }),
       });
       const data = await res.json();
+
+      // 422 (the photo could not be analysed) and 502 (the reply could not be
+      // parsed) both mean "this photo did not work", not "the app is broken".
+      // A red failure banner puts that on the user as a fault; it is an ordinary
+      // outcome of photographing a shelf in a shop, and the useful response is
+      // advice on the next shot.
+      if (res.status === 422 || res.status === 502) {
+        setUnreadable(true);
+        setPhase("idle");
+        return;
+      }
       if (!res.ok) throw new Error(data.error ?? "Could not identify the product.");
 
       const product = data.product as ProductIdentity;
@@ -189,6 +265,7 @@ export default function Home() {
   function reset() {
     setPhase("idle");
     setError("");
+    setUnreadable(false);
     setPhoto(null);
     setIdentity(null);
     setResult(null);
@@ -215,7 +292,22 @@ export default function Home() {
       </header>
 
       <div className="stack">
-        {error && <div className="error">{error}</div>}
+        {/*
+          An unreadable photo is a normal outcome in a shop, not a failure of the
+          app, so it gets advice in a warning tone rather than a red error. The
+          guidance is drawn from what actually worked in testing: close on the
+          printed label beats a wide shot of the product.
+        */}
+        {unreadable ? (
+          <div className="warning">
+            <strong>That photo didn&rsquo;t come out clearly.</strong> Try again,
+            closer to the printed label, so the product name and price fill the
+            frame. Tilting slightly away from overhead lights avoids the glare
+            that washes out small print.
+          </div>
+        ) : (
+          error && <div className="error">{error}</div>
+        )}
 
         {phase === "idle" && (
           <div className="card center">
@@ -362,7 +454,7 @@ function ConfirmStep({
           model. Missing specificity is the signal that actually matters, so it
           gets its own warning regardless of confidence.
         */}
-        {!draft.model.trim() && (
+        {!draft.model.trim() && hasModelNumbers(identity.category) && (
           <div className="warning" style={{ marginBottom: 14 }}>
             No model number was read. Prices found will be for whichever variant
             the search picks, which may not be this one. Add the model from the

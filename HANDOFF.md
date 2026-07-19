@@ -393,18 +393,22 @@ it is written out here.
    the UI. Recommendation on record: **accept and warn**, because shortening the
    deadline would convert currently-succeeding slow searches into failures —
    trading a rare, already-warned problem for a new common one.
-4. Gate the missing-model warning in `app/page.tsx` by category; it fires spuriously
-   on anything without a model number (see the defect note under finding #1).
+4. ~~Gate the missing-model warning by category~~ — **DONE.** `hasModelNumbers()`
+   in `app/page.tsx` is a deny-list, so it warns by default: a spurious warning is
+   mild, a missed one lets the search price a different product. Verified against
+   every category seen in testing, plus the control that "Laptop" still warns.
 5. **Watch for `tagPrice: null` on a tag that clearly shows a price.** Seen once
    on a synthetic canvas tag reading `HK$469`, where the product name and model
    were both read correctly. Probably an artefact of the generated image, so it
    is *not* confirmed on a real photo — but if it recurs in the field it means
    the price path is failing **silently**, which is the worst way for it to fail:
    the verdict simply disappears and nothing looks broken.
-6. Soften the unreadable-photo path. When `/api/identify` cannot parse a result it
-   returns the user to the camera with a red error banner. Correct, but blunt —
-   it reads as a fault rather than "try a clearer shot". Reproduces reliably by
-   feeding an image whose text did not render.
+6. ~~Soften the unreadable-photo path~~ — **DONE.** HTTP 422/502 from
+   `/api/identify` now render as amber guidance ("closer to the printed label…
+   tilt away from overhead lights") instead of a red error, since an unreadable
+   photo is a normal outcome in a shop, not an app fault. Note a featureless
+   image does NOT reproduce it — the model returned "Plain grey background" at
+   low confidence, a 200. Stub the fetch to exercise the branch.
 7. Decide the district filter's fate (finding #4) — online/in-store split plus a
    manually-set home district, but keep district data where dealer listings supply it.
 8. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
