@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Scan } from "@/lib/types";
 import { districtById } from "@/lib/hkDistricts";
 
@@ -33,6 +34,30 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
    * the reload discards.
    */
   const [zoomed, setZoomed] = useState<number | null>(null);
+
+  /**
+   * Whether the DOM exists yet, so the viewer can be portalled to document.body.
+   *
+   * Portalled because a modal overlay should not be nested inside a layout
+   * container, where its painting depends on ancestor stacking contexts. That
+   * is good practice on its own.
+   *
+   * It did NOT fix the open question below, and this comment should not be read
+   * as claiming it did.
+   *
+   * UNRESOLVED, in the in-app preview browser only: the semi-transparent
+   * backdrop photographs as fully transparent — the page behind stays at full
+   * brightness. Everything measurable says it should be dark: computed
+   * background rgba(0,0,0,0.9), opacity 1, position fixed at the full viewport,
+   * no transform/filter/contain/isolation on any ancestor, and it hit-tests
+   * topmost at the title, the cards and the tab bar. Forcing the SAME element to
+   * an opaque colour paints correctly, and a cloneNode of it carrying the same
+   * class also paints correctly. Cause not found; it may well be specific to
+   * that browser's compositor rather than to this CSS. Verify on a real device
+   * before changing anything here.
+   */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Escape closes the viewer. Bound only while it is open so this component
   // does not listen on every keystroke in the rest of the app.
@@ -202,20 +227,23 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
       {/* Full-size viewer. Tapping anywhere closes it, which is the gesture
           people already expect from a photo overlay; Escape does the same for
           anyone on a keyboard. */}
-      {zoomed !== null && (
-        <div
-          className="lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Photo of ${scan.product.name}`}
-          onClick={() => setZoomed(null)}
-        >
-          <img src={`/api/photo/${scan.id}?i=${zoomed}`} alt={`Photo of ${scan.product.name}`} />
-          <button className="lightbox-close" aria-label="Close photo">
-            ✕
-          </button>
-        </div>
-      )}
+      {zoomed !== null &&
+        mounted &&
+        createPortal(
+          <div
+            className="lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Photo of ${scan.product.name}`}
+            onClick={() => setZoomed(null)}
+          >
+            <img src={`/api/photo/${scan.id}?i=${zoomed}`} alt={`Photo of ${scan.product.name}`} />
+            <button className="lightbox-close" aria-label="Close photo">
+              ✕
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
