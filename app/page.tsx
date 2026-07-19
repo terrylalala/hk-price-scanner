@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import CameraCapture, { CapturedImage } from "@/components/CameraCapture";
 import { markdownToHtml } from "@/lib/markdown";
 import { Citation, PriceQuote, ProductIdentity } from "@/lib/types";
@@ -48,6 +48,15 @@ export default function Home() {
     tagPrice: "",
   });
   const [result, setResult] = useState<PriceResult | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // The scan stays on one screen and results append below it, so after a search
+  // the interesting part is off-screen. Bring it into view rather than leaving
+  // the user looking at the form they just submitted.
+  useEffect(() => {
+    if (phase !== "results") return;
+    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [phase]);
 
   async function identify(img: CapturedImage) {
     setError("");
@@ -114,6 +123,18 @@ export default function Home() {
     setDraft({ name: "", brand: "", model: "", tagPrice: "" });
   }
 
+  /**
+   * Reopen the editable form after a search.
+   *
+   * Clearing the result is the point: leaving old prices on screen under edited
+   * inputs would show a verdict for a product the user has just changed.
+   */
+  function editDetails() {
+    setResult(null);
+    setError("");
+    setPhase("confirm");
+  }
+
   return (
     <main className="shell">
       <header className="masthead">
@@ -132,6 +153,12 @@ export default function Home() {
 
         {phase === "identifying" && <Busy label="Reading the tag…" />}
 
+        {/*
+          One screen, not a wizard. The scan stays put and results append below
+          it, so there is never a navigation step to undo — pressing browser back
+          used to leave the app entirely, since a phase change creates no history
+          entry to return to.
+        */}
         {(phase === "confirm" || phase === "searching") && identity && (
           <ConfirmStep
             photo={photo}
@@ -146,16 +173,61 @@ export default function Home() {
 
         {phase === "searching" && <Busy label="Searching Hong Kong retailers…" />}
 
+        {/*
+          Once results exist the editable form collapses to a compact read-only
+          summary. Keeping the full form would push the verdict — the thing the
+          user actually came for — well below the fold, and would invite edits
+          that silently leave the prices below it stale.
+        */}
         {phase === "results" && result && (
-          <Results
-            result={result}
-            productName={draft.name}
-            tagPrice={parseFloat(draft.tagPrice)}
-            onAgain={reset}
-          />
+          <>
+            <ScanSummary photo={photo} draft={draft} onEdit={editDetails} />
+            <div ref={resultsRef}>
+              <div className="stack">
+                <Results
+                  result={result}
+                  productName={draft.name}
+                  tagPrice={parseFloat(draft.tagPrice)}
+                  onAgain={reset}
+                />
+              </div>
+            </div>
+          </>
         )}
       </div>
     </main>
+  );
+}
+
+/** What was scanned, kept visible above the results as read-only context. */
+function ScanSummary({
+  photo,
+  draft,
+  onEdit,
+}: {
+  photo: CapturedImage | null;
+  draft: Draft;
+  onEdit: () => void;
+}) {
+  const price = parseFloat(draft.tagPrice);
+  return (
+    <div className="card scan-summary">
+      {photo && (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img className="thumb" src={photo.dataUrl} alt="The product you photographed" />
+      )}
+      <div className="scan-summary-text">
+        <h3>{draft.name}</h3>
+        <p className="note">
+          {Number.isFinite(price) && price > 0
+            ? `Shop price HK$${Math.round(price)}`
+            : "No shop price read"}
+        </p>
+      </div>
+      <button className="btn quiet small" onClick={onEdit}>
+        Edit
+      </button>
+    </div>
   );
 }
 
