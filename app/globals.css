@@ -373,6 +373,32 @@ a {
   flex-shrink: 0;
 }
 
+/* ---------- usage table ---------- */
+
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.usage-table th,
+.usage-table td {
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.usage-table th:first-child,
+.usage-table td:first-child {
+  text-align: left;
+}
+
+.usage-table th {
+  font-weight: 600;
+  opacity: 0.7;
+}
+
 /* ---------- zoom-to-one-product cropper ---------- */
 
 .cropper {
