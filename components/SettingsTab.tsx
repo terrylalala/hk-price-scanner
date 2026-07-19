@@ -38,6 +38,9 @@ function UsagePanel() {
     priceCalls: number;
     estimatedQueries: number;
     freeQueries: number;
+    billableQueries: number;
+    estimatedHkd: number;
+    spendCapHkd: number;
   } | null>(null);
   const [limits, setLimits] = useState<{
     prices: number;
@@ -71,11 +74,57 @@ function UsagePanel() {
       <h2>Usage</h2>
 
       {month && (
-        <p className="note" style={{ marginTop: 6 }}>
-          This month: <strong>{month.priceCalls}</strong> price searches, about{" "}
-          <strong>{month.estimatedQueries.toLocaleString()}</strong> billed Google
-          queries of {month.freeQueries.toLocaleString()} free.
-        </p>
+        <>
+          <p className="note" style={{ marginTop: 6 }}>
+            This month: <strong>{month.priceCalls}</strong> price searches, about{" "}
+            <strong>{month.estimatedQueries.toLocaleString()}</strong> Google
+            queries of {month.freeQueries.toLocaleString()} free.
+          </p>
+
+          {/* A bar against the free allowance. The free tier, not the spend cap,
+              is the line that matters day to day — nothing costs anything until
+              it is crossed. */}
+          <div className="meter" style={{ marginTop: 8 }}>
+            <div
+              className="meter-fill"
+              style={{
+                width: `${Math.min(100, (month.estimatedQueries / month.freeQueries) * 100)}%`,
+              }}
+            />
+          </div>
+
+          <p className="note" style={{ marginTop: 8 }}>
+            {month.billableQueries === 0 ? (
+              <>
+                Estimated cost <strong>HK$0</strong> — still inside the free
+                allowance.
+              </>
+            ) : (
+              <>
+                Estimated cost <strong>HK${month.estimatedHkd.toFixed(2)}</strong>{" "}
+                for {month.billableQueries.toLocaleString()} queries beyond the
+                free allowance, against the HK${month.spendCapHkd} cap.
+              </>
+            )}
+          </p>
+
+          {/*
+            Said plainly, because a number that looks like a bill invites being
+            trusted like one. This is computed from our own counters: Google
+            exposes no spend endpoint for an AI Studio key, the real figures need
+            the Cloud Billing API, and they lag a day regardless.
+          */}
+          <p className="note" style={{ marginTop: 6, opacity: 0.75 }}>
+            An estimate from this app&rsquo;s own counters, not billed spend. It
+            covers grounded search only — identification and advice are billed by
+            tokens and are not counted here. For the real figure see AI Studio →
+            Gemini API Spend at{" "}
+            <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer">
+              aistudio.google.com
+            </a>
+            .
+          </p>
+        </>
       )}
 
       {/* Reported by the server, not hardcoded: an env override would otherwise

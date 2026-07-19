@@ -27,6 +27,26 @@ const DAYS = 21;
  *  the unit Google actually bills, so the monthly figure means something. */
 const QUERIES_PER_PRICE_CALL = 5;
 
+/**
+ * Pricing used for the cost ESTIMATE below. Not fetched from Google.
+ *
+ * There is no endpoint that reports what an AI Studio key has spent. Real
+ * figures need the Cloud Billing API — a service account, a JSON key to store
+ * as a secret, the API enabled — and still lag about 24 hours. That is a lot of
+ * machinery, and a new secret to manage, for a number that arrives stale.
+ *
+ * So this is computed from counters we already keep, and the UI says so and
+ * points at the authoritative page. These constants are the thing that will rot:
+ * if Google changes pricing or the free allowance, they are wrong until edited,
+ * which is the honest cost of not calling the billing API.
+ */
+const FREE_QUERIES_PER_MONTH = 5000;
+const USD_PER_1000_QUERIES = 14;
+/** HKD is pegged to USD in a narrow band, so a constant is fine here. */
+const HKD_PER_USD = 7.8;
+/** The AI Studio spend cap set on this project, for context on the estimate. */
+const SPEND_CAP_HKD = 150;
+
 export async function GET(req: NextRequest) {
   const authz = await requireUser(req);
   if (!authz.ok) return authz.response;
@@ -71,14 +91,25 @@ export async function GET(req: NextRequest) {
       .filter((d) => d.day.startsWith(monthPrefix))
       .reduce((n, d) => n + d.prices, 0);
 
+    const estimatedQueries = monthPriceCalls * QUERIES_PER_PRICE_CALL;
+    // Only queries BEYOND the free allowance cost anything, so the estimate is
+    // zero for a long time — which is the useful thing to be able to see.
+    const billableQueries = Math.max(0, estimatedQueries - FREE_QUERIES_PER_MONTH);
+    const estimatedHkd =
+      (billableQueries / 1000) * USD_PER_1000_QUERIES * HKD_PER_USD;
+
     return NextResponse.json({
       days,
       // The limits actually in force, env overrides included.
       limits: allLimits(),
       month: {
         priceCalls: monthPriceCalls,
-        estimatedQueries: monthPriceCalls * QUERIES_PER_PRICE_CALL,
-        freeQueries: 5000,
+        estimatedQueries,
+        freeQueries: FREE_QUERIES_PER_MONTH,
+        billableQueries,
+        // Rounded to cents; presented as an estimate, never as billed spend.
+        estimatedHkd: Math.round(estimatedHkd * 100) / 100,
+        spendCapHkd: SPEND_CAP_HKD,
       },
     });
   } catch (err) {
