@@ -747,7 +747,39 @@ it is written out here.
     does `create table if not exists`. **Do not build it until the regeneration is
     actually annoying**; one wasted call is cheaper than a migration nobody needed.
 
-15. **Attach photos to saved scans** (blocked on Blob). `photo_url` is always null
+15. ~~Attach photos to saved scans~~ — **DONE.** Blob store
+    `hk-price-scanner-photos` (private, HKG1), upload on save, served through the
+    existing ownership-checked `/api/photo/[id]`.
+
+    - **The photo URL still never reaches the client.** `hasPhoto` is a boolean;
+      the URL stays server-side. A private blob URL is unguessable but permanent,
+      so a leaked one would be readable forever.
+    - **Upload failure never loses the scan.** `storePhoto()` returns null rather
+      than throwing — a decorative photo must not destroy a result that cost a
+      billed search.
+    - **DELETE now removes the blob too.** Verified as a real leak first: deleting
+      a scan left a 714 KB photo in the store permanently, unreachable because
+      `/api/photo/[id]` needs the row, but still billed. `price_points` cascades
+      via foreign key; Blob is a separate service with no referential integrity
+      to Postgres, so it must be deleted explicitly.
+
+    **EXIF is stripped, and that is deliberate — do not "optimise" it away.**
+    `CameraCapture` re-encodes through a canvas, which discards all metadata.
+    Verified: a source JPEG carrying `Apple / iPhone 17 Pro Max / GPS-Data` came
+    out the other side with no Exif and no GPS. Uploading the original file
+    instead would be faster to write and would silently start storing the user's
+    exact coordinates in every saved photo, forever.
+
+    Two Vercel traps found here: the Blob integration marks
+    `BLOB_READ_WRITE_TOKEN` **Sensitive automatically**, so Settings will not
+    reveal it — get it from **Storage → the store → Quickstart → `.env.local`
+    tab** instead. And that tab formats values as `KEY="value"`; the quotes were
+    stripped for consistency with the rest of the file.
+
+    **Never accept Vercel's "Revoke Token" prompt.** It is correct only if the
+    token is unused outside Vercel — local dev has no OIDC and depends on it.
+    `lib/db.ts` records that revoking is what broke photo uploads on the app this
+    was derived from. `photo_url` is always null
     so `hasPhoto` is false and `/api/photo/[id]` has nothing to serve. History
     shows product names with no pictures. `hasBlob()` already degrades cleanly, so
     this is provisioning plus an upload path, not a fix.

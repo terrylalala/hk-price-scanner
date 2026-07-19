@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureSchema, getSql, hasDb } from "@/lib/db";
+import { del } from "@vercel/blob";
+import { ensureSchema, getSql, hasBlob, hasDb } from "@/lib/db";
 import { ownerId, requireUser } from "@/lib/session";
 import { ScanRow, rowToScan } from "@/lib/scans";
 
@@ -116,12 +117,30 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   try {
     await ensureSchema();
     const sql = getSql();
-    // price_points rows cascade via the foreign key, so no second statement.
+    // price_points rows cascade via the foreign key. photo_url does NOT — Blob
+    // is a separate service with no referential integrity to Postgres — so the
+    // object is returned here and deleted explicitly. Verified: without this a
+    // deleted scan left a 714 KB photo in the store permanently, unreachable
+    // (since /api/photo/[id] needs the row) but still counted against storage.
     const rows = (await sql`
-      delete from scans where id = ${id} and user_id = ${uid} returning id
-    `) as unknown as { id: string }[];
+      delete from scans where id = ${id} and user_id = ${uid}
+      returning id, photo_url
+    `) as unknown as { id: string; photo_url: string | null }[];
 
     if (rows.length === 0) return notFound();
+
+    const photoUrl = rows[0].photo_url;
+    if (photoUrl && hasBlob()) {
+      try {
+        await del(photoUrl);
+      } catch (err) {
+        // The row is gone, which is what was asked for. A failed blob delete
+        // leaks storage — worth logging, not worth failing the request over,
+        // since retrying would find no row to delete.
+        console.warn("[/api/scans/[id]] scan deleted but photo remains", err);
+      }
+    }
+
     return NextResponse.json({ deleted: rows[0].id });
   } catch (err) {
     console.error("[/api/scans/[id] DELETE] failed", err);

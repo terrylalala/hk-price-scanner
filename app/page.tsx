@@ -263,6 +263,9 @@ export default function Home() {
           // Required to redisplay this scan's prices later without breaching
           // the Search Suggestions term. See lib/db.ts.
           searchSuggestionsHtml: priced.searchSuggestionsHtml,
+          // Already downscaled to 1600px by CameraCapture. Optional: the route
+          // saves the scan regardless if the upload fails.
+          photoBase64: photo?.base64,
         }),
       });
       if (!res.ok && res.status !== 501) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureSchema, getSql, hasDb } from "@/lib/db";
+import { put } from "@vercel/blob";
+import { ensureSchema, getSql, hasBlob, hasDb } from "@/lib/db";
 import { ownerId, requireUser } from "@/lib/session";
 import { ScanRow, bestQuote, hongKongDay, rowToScan } from "@/lib/scans";
 import { districtFromText } from "@/lib/hkDistricts";
@@ -76,6 +77,39 @@ interface CreateBody {
   notes?: string;
   /** Required to redisplay the price list later; see lib/db.ts. */
   searchSuggestionsHtml?: string;
+  /** Base64 JPEG of the scan photo, no data: prefix. Optional. */
+  photoBase64?: string;
+}
+
+/** ~10MB of base64. The client downscales to 1600px, so this is a sanity bound. */
+const MAX_PHOTO_BASE64 = 10_000_000;
+
+/**
+ * Store the scan photo, returning its Blob URL or null.
+ *
+ * Never throws. A photo is a nice-to-have attached to a scan that cost a billed
+ * search to produce — losing the whole scan because an image upload failed would
+ * trade something valuable for something decorative.
+ *
+ * Uploaded PRIVATE. The URL is unguessable but permanent, so a public blob would
+ * mean a leaked link is readable by anyone forever; /api/photo/[id] streams the
+ * bytes after checking ownership instead, and the URL never reaches the client.
+ */
+async function storePhoto(id: string, base64: string | undefined): Promise<string | null> {
+  if (!base64 || !hasBlob()) return null;
+  const data = base64.includes(",") ? base64.slice(base64.indexOf(",") + 1) : base64;
+  if (data.length > MAX_PHOTO_BASE64) return null;
+
+  try {
+    const blob = await put(`scans/${id}.jpg`, Buffer.from(data, "base64"), {
+      access: "private",
+      contentType: "image/jpeg",
+    });
+    return blob.url;
+  } catch (err) {
+    console.warn("[/api/scans] photo upload failed; saving scan without it", err);
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -122,6 +156,8 @@ export async function POST(req: NextRequest) {
   const id = crypto.randomUUID();
   const now = new Date();
 
+  const photoUrl = await storePhoto(id, body.photoBase64);
+
   try {
     await ensureSchema();
     const sql = getSql();
@@ -133,7 +169,7 @@ export async function POST(req: NextRequest) {
         tag_price, currency, store_name, district,
         confidence, assumptions,
         best_price, best_source, quotes, citations, notes,
-        search_suggestions_html
+        search_suggestions_html, photo_url
       ) values (
         ${id}, ${uid}, ${now.toISOString()}, ${hongKongDay(now)},
         ${name}, ${str(p.brand)}, ${str(p.model)}, ${str(p.category)},
@@ -142,7 +178,7 @@ export async function POST(req: NextRequest) {
         ${best?.price ?? null}, ${best?.store ?? ""},
         ${JSON.stringify(quotes)}, ${JSON.stringify(citations)},
         ${str(body.notes) || null},
-        ${str(body.searchSuggestionsHtml) || null}
+        ${str(body.searchSuggestionsHtml) || null}, ${photoUrl}
       )
       returning *
     `) as unknown as ScanRow[];
