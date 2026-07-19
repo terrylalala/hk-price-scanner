@@ -81,7 +81,15 @@ export interface Scan {
   /** Local calendar day, YYYY-MM-DD. Local, not UTC. */
   date: string;
   product: ProductIdentity;
-  /** Cheapest quote found at scan time, if any. */
+  /**
+   * Normalized HK district, or "" when unknown.
+   *
+   * Top-level rather than on `product` because it is derived (via
+   * `lib/hkDistricts`) rather than read off the photo. The raw text it was
+   * derived from is `ProductIdentity.locationHint`, which is not persisted.
+   */
+  district: string;
+  /** Cheapest EXACT-model quote found at scan time, if any. */
   bestPrice: number | null;
   bestSource: string;
   quotes: PriceQuote[];

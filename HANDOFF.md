@@ -45,7 +45,8 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 | ✅ `/api/identify` — vision + structured output | passes on close-ups of a single item incl. a real shelf label; **fails on a multi-product shelf — see finding #1** |
 | ⚠️ `/api/prices` — grounded search | works, but **unreliable in five distinct ways — see finding #6** |
 | ✅ Scan flow UI — capture → identify → confirm → search → results | `app/page.tsx`, verified end-to-end in browser |
-| ⬜ `/api/scans` CRUD, `/api/advice` | not started — scans survive a reload via `sessionStorage` only (a stand-in; see task 8) |
+| ✅ `/api/scans` CRUD | list/create/get/patch/delete, tested against Neon |
+| ⬜ `/api/advice` | not started |
 | ⬜ History / Watch / Settings tabs | not started |
 | ✅ GitHub repo | **public**, pushed: <https://github.com/terrylalala/hk-price-scanner> |
 | ✅ Neon DB + Vercel project | **deployed & verified** — <https://hk-price-scanner.vercel.app> |
@@ -451,7 +452,29 @@ it is written out here.
    low confidence, a 200. Stub the fetch to exercise the branch.
 7. Decide the district filter's fate (finding #4) — online/in-store split plus a
    manually-set home district, but keep district data where dealer listings supply it.
-8. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
+8. ~~`/api/scans` CRUD~~ — **DONE.** `GET`/`POST` on `/api/scans`, `GET`/`PATCH`/
+   `DELETE` on `/api/scans/[id]`, plus `lib/scans.ts` for row⇄Scan mapping. The
+   client saves automatically after a successful price search. Full cycle tested
+   against Neon, and a real UI scan verified to land as a row.
+
+   Three decisions worth not reversing:
+   - **`bestPrice` comes from the cheapest EXACT-model quote, never the cheapest
+     overall** (`bestQuote()`). Storing the cheapest would bake finding #5 into
+     permanent history: a recorded best price for a different product, stripped
+     of the note that said so. Storage is where that mistake stops being fixable.
+   - **`day` is computed in Asia/Hong_Kong, not from the server clock.** Vercel
+     runs UTC and HK is UTC+8, so anything scanned before 08:00 local would
+     otherwise be filed under the previous day.
+   - **Ownership is enforced in the WHERE clause**, never as a separate check —
+     following `/api/photo/[id]`. Another user's row simply does not match.
+
+   Still open: **Blob photo upload.** `photo_url` stays null, so `hasPhoto` is
+   always false and `/api/photo/[id]` has nothing to serve. Blob is not
+   provisioned; `hasBlob()` already degrades cleanly.
+
+   Note `sessionStorage` was NOT removed. It holds the *in-progress* scan (photo
+   and draft before a search), which has no row yet; the database holds completed
+   scans. They do different jobs — the earlier "stand-in" framing was too simple.
 9. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
 10. `/api/advice` buying-advice route.
 11. ~~Create the public GitHub repo~~ — **DONE.**

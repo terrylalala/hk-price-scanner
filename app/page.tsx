@@ -135,6 +135,7 @@ export default function Home() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
   const [unreadable, setUnreadable] = useState(false);
+  const [district, setDistrict] = useState("");
   const [photo, setPhoto] = useState<CapturedImage | null>(null);
   const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [draft, setDraft] = useState<Draft>({
@@ -224,6 +225,9 @@ export default function Home() {
 
       const product = data.product as ProductIdentity;
       setIdentity(product);
+      // /api/identify derives this from locationHint; the client would otherwise
+      // drop it, and the scan would be saved without a district it already knew.
+      setDistrict(typeof data.district === "string" ? data.district : "");
       setDraft({
         name: product.name,
         brand: product.brand,
@@ -256,9 +260,51 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error ?? "Could not search for prices.");
       setResult(data as PriceResult);
       setPhase("results");
+      void saveScan(data as PriceResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setPhase("confirm");
+    }
+  }
+
+  /**
+   * Persist a completed scan.
+   *
+   * Deliberately fire-and-forget, and deliberately quiet on failure: the search
+   * already succeeded and its result is on screen, so interrupting with a
+   * storage error would be louder than the problem. sessionStorage still holds
+   * the scan, so nothing visible is lost either way.
+   *
+   * This is only defensible while nothing SHOWS saved scans. Once the History
+   * tab exists (task 9), a silent failure becomes a scan the user believes was
+   * kept and cannot find — surface it then.
+   */
+  async function saveScan(priced: PriceResult) {
+    if (!identity) return;
+    try {
+      const tag = parseFloat(draft.tagPrice);
+      const res = await fetch("/api/scans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product: {
+            ...identity,
+            name: draft.name,
+            brand: draft.brand,
+            model: draft.model,
+            tagPrice: Number.isFinite(tag) && tag > 0 ? tag : null,
+          },
+          district,
+          quotes: priced.quotes,
+          citations: priced.citations,
+        }),
+      });
+      if (!res.ok && res.status !== 501) {
+        // 501 is the expected answer with no database configured, not a fault.
+        console.warn("[saveScan] failed", res.status, await res.text());
+      }
+    } catch (err) {
+      console.warn("[saveScan] failed", err);
     }
   }
 
@@ -266,6 +312,7 @@ export default function Home() {
     setPhase("idle");
     setError("");
     setUnreadable(false);
+    setDistrict("");
     setPhoto(null);
     setIdentity(null);
     setResult(null);
