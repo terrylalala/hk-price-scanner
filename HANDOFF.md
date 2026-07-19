@@ -45,10 +45,10 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 | ✅ `/api/identify` — vision + structured output | passes on close-ups of a single item incl. a real shelf label; **fails on a multi-product shelf — see finding #1** |
 | ⚠️ `/api/prices` — grounded search | works, but **unreliable in five distinct ways — see finding #6** |
 | ✅ Scan flow UI — capture → identify → confirm → search → results | `app/page.tsx`, verified end-to-end in browser |
-| ⬜ `/api/scans` CRUD, `/api/advice` | not started — **scans are not persisted; reload loses the result** |
+| ⬜ `/api/scans` CRUD, `/api/advice` | not started — scans survive a reload via `sessionStorage` only (a stand-in; see task 8) |
 | ⬜ History / Watch / Settings tabs | not started |
 | ✅ GitHub repo | **public**, pushed: <https://github.com/terrylalala/hk-price-scanner> |
-| ⬜ Neon DB, Vercel project | not created yet |
+| ✅ Neon DB + Vercel project | **deployed & verified** — <https://hk-price-scanner.vercel.app> |
 
 Pushed to <https://github.com/terrylalala/hk-price-scanner> (public, `main`).
 Verified on push: no secrets in history, `.env.local` absent from the remote,
@@ -371,6 +371,35 @@ look like empty results. Always check the HTTP status alongside the body.
   control, not just abuse protection. Caps are on by default.
 - When deploying: Vercel's "Redeploy" re-runs the **same commit**. Verify the
   deployed commit SHA — a 200 from a health check proves nothing about what is live.
+- **`GET /api/photo/<any-bogus-id>` is a free, exact health check for the
+  database.** It touches Postgres and calls no AI, so it costs nothing:
+  - `501` → `DATABASE_URL` never reached the runtime
+  - `404` → connected **and** `ensureSchema()` built the tables (a successful
+    query against `scans` that found no row)
+  - `500` → connected but the connection or schema failed
+
+  Use it after every deploy. It is the only cheap way to tell those three apart,
+  and the dashboard shows the same green tick for all of them.
+- **Environment variables only reach a deployment built AFTER they existed.**
+  This cost a wasted cycle here: the database was connected six minutes *after* a
+  redeploy, so production kept returning 501 while the dashboard looked perfect.
+  Worse, the Redeploy dialog is byte-identical either way — the code is the same
+  commit, and nothing in that dialog reflects the env vars that changed. Always
+  compare the variable's "Added" timestamp against the deployment's, then probe.
+- **Marking a variable "Sensitive" means you can never read it back**, and
+  `vercel env pull` cannot retrieve it either. `GEMINI_API_KEY` was set sensitive,
+  which made "is this the new key or the old one?" unanswerable from Vercel — it
+  took checking Google Cloud API metrics for a timed burst of requests to settle.
+  Do not set it on anything you may need to audit or copy. `DATABASE_URL` was
+  deliberately left non-sensitive so it could be copied to `.env.local`.
+- **Neon integration settings that matter:** leave **Auth off** (this app is
+  single-user; `session.ts` expects Auth.js if accounts ever arrive), leave
+  **Custom Prefix empty** (a prefix yields `STORAGE_URL`, which `db.ts` does not
+  read — you would get a silently database-less app), and tick **Development**
+  alongside Production/Preview so the value can be copied locally.
+- A newly created Google Cloud project may not appear under the project picker's
+  **Recent** tab — check **All**, and check the organisation selector. Ten minutes
+  went into believing a project had not been created when it had.
 
 ## Open work, roughly in order
 
@@ -430,7 +459,16 @@ it is written out here.
     Note the first commit `6e9415b` is authored `noreply@localhost`, the address
     Vercel rejects — harmless while deploying from `HEAD`, a problem only if you
     ever deploy or roll back to that specific commit.
-12. Vercel project + Neon database, then verify the deployed commit SHA. Order:
+12. ~~Vercel project + Neon database~~ — **DONE, all verified.** Kept for the
+    order and the traps, which apply to any future redeploy.
+
+    Live: <https://hk-price-scanner.vercel.app> · deployed SHA `39d422b`,
+    matching local HEAD · Neon `hk-price-scanner-db` (Singapore, Auth off),
+    shared by local and production · Gemini key in its own Google Cloud project
+    `gen-lang-client-0746637773`, traffic confirmed landing there · rate limits
+    **live** (the `usage` table now counts).
+
+    Original order:
     import the repo to Vercel, then **Vercel → Storage → Neon → Connect Project**
     (tick Development *and* Production), then `vercel env pull .env.local` so local
     dev gets `DATABASE_URL` too — the integration sets it on Vercel only, and
