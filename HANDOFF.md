@@ -47,7 +47,7 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 | ✅ Scan flow UI — capture → identify → confirm → search → results | `app/page.tsx`, verified end-to-end in browser |
 | ✅ `/api/scans` CRUD | list/create/get/patch/delete, tested against Neon |
 | ⬜ `/api/advice` | not started |
-| ⬜ History / Watch / Settings tabs | not started |
+| ✅ History / Watch / Settings tabs | `TabBar` retabbed and wired; scans list, track, delete, home district |
 | ✅ GitHub repo | **public**, pushed: <https://github.com/terrylalala/hk-price-scanner> |
 | ✅ Neon DB + Vercel project | **deployed & verified** — <https://hk-price-scanner.vercel.app> |
 
@@ -71,9 +71,9 @@ the sibling project, and the same trap would return if it is ever flipped back:
 - Public is safe here: the only secret is `GEMINI_API_KEY`, which lives in
   `.env.local` and is covered by the broad `.env*` ignore rule.
 
-`components/TabBar.tsx` is inherited from the Calorie Tracker and still has its
-tabs (`today | history | coach | settings`). Nothing imports it. Retab or delete
-it when the tab bar is actually built — do not assume it fits this app.
+`components/TabBar.tsx` was inherited from the Calorie Tracker with its tabs
+(`today | history | coach | settings`) and is now retabbed to
+`scan | history | watch | settings` and wired up.
 
 ## Verified findings that should shape the next session
 
@@ -475,7 +475,24 @@ it is written out here.
    Note `sessionStorage` was NOT removed. It holds the *in-progress* scan (photo
    and draft before a search), which has no row yet; the database holds completed
    scans. They do different jobs — the earlier "stand-in" framing was too simple.
-9. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
+9. ~~History / Watch / Settings tabs~~ — **DONE.** `TabBar` retabbed to
+   `scan | history | watch | settings`; `components/ScanList.tsx` (History and
+   Watch), `components/SettingsTab.tsx`, and `app/api/settings/route.ts` backed
+   by the existing `user_settings` jsonb row.
+
+   - **Watch is History filtered by `?watching=true`, not a separate component.**
+     Nothing writes to `price_points` yet, so a distinct view would be a copy of
+     the same list with no behavioural difference.
+   - **The scan flow is hidden, not unmounted, when another tab is active.**
+     Unmounting would discard an in-progress scan the moment someone glanced at
+     History — the same class of loss the sessionStorage work fixed for reloads.
+   - **Settings stores the home district but nothing reads it.** Deliberate:
+     storing a preference is reversible, changing which price the app calls
+     "best" is not. See task 7.
+
+   Known rough edge: toggling Track takes ~4s (a PATCH then a reload, each a
+   round trip to Neon in Singapore) and the button only greys out meanwhile.
+   An optimistic update would fix it.
 10. `/api/advice` buying-advice route.
 11. ~~Create the public GitHub repo~~ — **DONE.**
     <https://github.com/terrylalala/hk-price-scanner>, public, 15 commits on `main`.

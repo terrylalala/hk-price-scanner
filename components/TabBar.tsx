@@ -1,11 +1,24 @@
 "use client";
 
-export type Tab = "today" | "history" | "coach" | "settings";
+/**
+ * Bottom tab bar.
+ *
+ * Retabbed from the Calorie Tracker original, which had `today | history |
+ * coach | settings`. Only the shape survived; the tabs themselves were wrong for
+ * this app and were never wired up.
+ *
+ * "Watch" reuses the History list filtered to tracked scans rather than being a
+ * distinct view — there is no re-check mechanism yet (the `price_points` table
+ * exists but nothing writes to it), so a separate component would duplicate the
+ * list for no behavioural difference.
+ */
+
+export type Tab = "scan" | "history" | "watch" | "settings";
 
 const TABS: { id: Tab; label: string; icon: string; iconActive: string }[] = [
-  { id: "today", label: "Today", icon: "☾", iconActive: "☾" },
+  { id: "scan", label: "Scan", icon: "◎", iconActive: "◉" },
   { id: "history", label: "History", icon: "◇", iconActive: "◆" },
-  { id: "coach", label: "Coach", icon: "☆", iconActive: "★" },
+  { id: "watch", label: "Watch", icon: "☆", iconActive: "★" },
   { id: "settings", label: "Settings", icon: "○", iconActive: "●" },
 ];
 

@@ -101,6 +101,18 @@ export interface Scan {
   watching: boolean;
 }
 
+/** Per-user settings, stored as one jsonb blob (see /api/settings). */
+export interface UserSettings {
+  /**
+   * Normalized HK district id the user says they shop in, or "" for unset.
+   *
+   * Set manually rather than inferred. Grounded search rarely reports a district
+   * — most results are online retailers with no physical location — so deriving
+   * a "home" district from results was never viable. See finding #4.
+   */
+  homeDistrict: string;
+}
+
 /** One observed price for a watched product, for the history chart. */
 export interface PricePoint {
   checkedAt: string;

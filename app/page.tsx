@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import CameraCapture, { CapturedImage } from "@/components/CameraCapture";
+import TabBar, { Tab } from "@/components/TabBar";
+import ScanList from "@/components/ScanList";
+import SettingsTab from "@/components/SettingsTab";
 import { markdownToHtml } from "@/lib/markdown";
 import { Citation, PriceQuote, ProductIdentity } from "@/lib/types";
 
@@ -136,6 +139,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [unreadable, setUnreadable] = useState(false);
   const [district, setDistrict] = useState("");
+  const [tab, setTab] = useState<Tab>("scan");
   const [photo, setPhoto] = useState<CapturedImage | null>(null);
   const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [draft, setDraft] = useState<Draft>({
@@ -331,13 +335,31 @@ export default function Home() {
     setPhase("confirm");
   }
 
+  const TITLES: Record<Tab, { h1: string; sub: string }> = {
+    scan: { h1: "Price Scanner", sub: "Is that Hong Kong shop price any good?" },
+    history: { h1: "History", sub: "Every scan you have saved" },
+    watch: { h1: "Watch", sub: "Products you are tracking" },
+    settings: { h1: "Settings", sub: "" },
+  };
+
   return (
-    <main className="shell">
+    <main className="shell has-tabbar">
       <header className="masthead">
-        <h1>Price Scanner</h1>
-        <p>Is that Hong Kong shop price any good?</p>
+        <h1>{TITLES[tab].h1}</h1>
+        {TITLES[tab].sub && <p>{TITLES[tab].sub}</p>}
       </header>
 
+      {tab === "history" && <ScanList />}
+      {tab === "watch" && <ScanList watchingOnly />}
+      {tab === "settings" && <SettingsTab />}
+
+      {/*
+        The scan flow stays mounted across tab switches, hidden rather than
+        unmounted. Unmounting would discard an in-progress scan — the photo and
+        the confirm-step edits — the moment someone glanced at History, which is
+        the same class of loss the sessionStorage work fixed for reloads.
+      */}
+      <div style={{ display: tab === "scan" ? undefined : "none" }}>
       <div className="stack">
         {/*
           An unreadable photo is a normal outcome in a shop, not a failure of the
@@ -407,6 +429,9 @@ export default function Home() {
           </>
         )}
       </div>
+      </div>
+
+      <TabBar active={tab} onChange={setTab} />
     </main>
   );
 }

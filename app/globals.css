@@ -346,6 +346,111 @@ a {
   flex-shrink: 0;
 }
 
+/* ---------- tab bar ---------- */
+
+/* Room for the fixed bar plus the iOS home indicator, so the last card in a
+   scrolling list is never trapped underneath it. */
+.shell.has-tabbar {
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+}
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 253, 249, 0.94);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 20;
+}
+
+.tabbar-inner {
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+}
+
+.tab {
+  flex: 1;
+  appearance: none;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  padding: 8px 0 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.tab .ico {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.tab.active {
+  color: var(--accent);
+}
+
+/* ---------- saved scan rows ---------- */
+
+.scan-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scan-row-title {
+  min-width: 0;
+}
+
+.scan-row-title h3 {
+  font-size: 1rem;
+}
+
+.pill {
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+}
+
+.pill.good {
+  color: var(--good);
+  border-color: #cfe0d2;
+  background: #f1f7f2;
+}
+.pill.fair {
+  color: var(--warn);
+  border-color: #ecd9b8;
+  background: #fdf4e6;
+}
+.pill.poor {
+  color: var(--bad);
+  border-color: #eccdc7;
+  background: #fbecea;
+}
+
+.select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 1rem;
+  font-family: inherit;
+}
+
 /* ---------- misc ---------- */
 
 .note {
