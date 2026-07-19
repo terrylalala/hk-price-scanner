@@ -189,15 +189,17 @@ a {
   border: 1px solid var(--line-strong);
   background: var(--sage-tint);
   box-shadow: none;
-  font-size: 3.15rem;
+  font-size: 46px;
   line-height: 1;
   cursor: pointer;
   margin-bottom: 16px;
   transition: transform 0.12s ease;
   /* Sits below the geometric centre on purpose. An arch carries its visual
      weight in the dome, so a glyph centred by the box reads as riding high;
-     the padding drops it to where the eye expects it. */
-  padding-top: 20px;
+     the padding drops it to where the eye expects it.
+     Padding shifts the glyph by HALF its value — it shrinks the content box the
+     glyph is then centred in — so 14px here is a 7px drop, not 14. */
+  padding-top: 14px;
 }
 
 .camera:active:not(:disabled) {
