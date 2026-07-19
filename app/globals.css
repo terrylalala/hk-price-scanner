@@ -87,6 +87,19 @@ h3 {
   margin-top: 6px;
 }
 
+/*
+ * Explanatory copy needs air before the control it explains, or the two read as
+ * one block and the button stops looking pressable. A sibling rule rather than
+ * a margin on .btn itself: buttons inside .btn-row are spaced by the row's gap,
+ * and adding a blanket margin there would double it.
+ */
+.card p + .btn,
+.card p + .btn-row,
+.card .note + .btn,
+.card .note + .btn-row {
+  margin-top: 18px;
+}
+
 p {
   margin: 0;
 }
