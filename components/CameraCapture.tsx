@@ -122,3 +122,63 @@ export default function CameraCapture({
     </>
   );
 }
+
+/**
+ * A compact second-photo picker.
+ *
+ * Shares `downscale()` with CameraCapture rather than duplicating it — the 1600px
+ * / 0.92 settings exist to keep small printed digits legible, and a second copy
+ * would drift from that reasoning. It also means EXIF stripping (a side effect of
+ * the canvas re-encode) applies to added photos too, which matters: a spec-card
+ * close-up carries the same GPS as any other shot.
+ */
+export function AddPhoto({
+  onCapture,
+  onError,
+  disabled,
+}: {
+  onCapture: (img: CapturedImage) => void;
+  onError: (message: string) => void;
+  disabled?: boolean;
+}) {
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      onError("Please choose an image file.");
+      return;
+    }
+    try {
+      onCapture(await downscale(file));
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not process the image.");
+    }
+  }
+
+  return (
+    <>
+      <div className="btn-row">
+        <button
+          className="btn quiet small"
+          disabled={disabled}
+          onClick={() => cameraRef.current?.click()}
+        >
+          + Take another
+        </button>
+        <button
+          className="btn quiet small"
+          disabled={disabled}
+          onClick={() => libraryRef.current?.click()}
+        >
+          + From library
+        </button>
+      </div>
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={handleFile} />
+      <input ref={libraryRef} type="file" accept="image/*" hidden onChange={handleFile} />
+    </>
+  );
+}

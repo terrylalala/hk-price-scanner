@@ -37,6 +37,8 @@ export interface ScanRow {
   search_suggestions_html: string | null;
   /** Server-side only. Mapped to `hasPhoto`; the URL never reaches the client. */
   photo_url: string | null;
+  /** Server-side only. All photos; `photo_url` is the first. */
+  photo_urls: string[] | null;
 }
 
 export function rowToScan(row: ScanRow): Scan {
@@ -80,6 +82,13 @@ export function rowToScan(row: ScanRow): Scan {
     // The Blob URL is never serialized. The client learns only that one exists
     // and fetches it through /api/photo/[id], which re-checks ownership.
     hasPhoto: !!row.photo_url,
+    // A count, not URLs. The client needs to know how many images to request
+    // from /api/photo/[id]?i=N; it must never learn where they actually live.
+    photoCount: Array.isArray(row.photo_urls)
+      ? row.photo_urls.length
+      : row.photo_url
+        ? 1
+        : 0,
     watching: row.watching,
   };
 }

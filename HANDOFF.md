@@ -451,6 +451,34 @@ defaulted to `'local'`, `accountsEnabled()` is the switch, and `requireUser()`
 fails closed with 501 if the `AUTH_*` vars appear before sign-in is built. So
 accounts remain a config change plus an Auth.js branch — **plus that global cap.**
 
+**12. Multi-photo identify works, but does NOT solve the multi-label shelf —
+and the reason it doesn't is sound.** `/api/identify` now accepts up to three
+views of one product (`images: [{imageBase64, mediaType}]`, single form still
+accepted). The client keeps the one-photo fast path and offers "add another"
+from the confirm step, which is where you can already see identification went
+wrong.
+
+**The hoped-for win did not materialise.** Re-running the D45 shelf with a second
+photo cropped to the single `Xiaomi 吸頂燈 D40 · HK$469` card, it still returned
+an empty model with the warning shown:
+
+> *"The specific model size (D20, D30, or D40) of the displayed ceiling light is
+> not definitively identifiable from the physical unit alone."*
+
+It is **right**. A close-up proves that card exists and says $469; it does not
+prove the unit on display is a D40. The shopper knows which card they pointed at,
+the model only sees two images.
+
+I tried instructing it that a deliberate close-up of one label should be treated
+as authoritative. It refused twice, reasoning about what it could see rather than
+about intent — so that instruction was **reverted rather than left in**, since an
+unproven prompt rule that changes nothing is just future confusion.
+
+So the honest position: multi-photo should help where a model number is legible
+in a close-up but not a wide shot **and no competing labels exist**. That case is
+untested. It does not rescue an ambiguous shelf, and the correct fix there remains
+the confirm step — the warning fires and the shopper types the model.
+
 ## Gotchas already paid for (do not rediscover)
 
 - **In a HK electronics shop, the model number is not on the product — it is on

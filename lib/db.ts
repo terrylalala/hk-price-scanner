@@ -103,6 +103,18 @@ async function initSchema(): Promise<void> {
     alter table scans add column if not exists search_suggestions_html text
   `;
 
+  /**
+   * All photos for a scan, as a JSON array of Blob URLs.
+   *
+   * `photo_url` is kept as the FIRST photo rather than being replaced: it is
+   * what old rows have, what the thumbnail uses, and what /api/photo/[id]
+   * falls back to when this column is null. Migrating it away would mean
+   * rewriting existing rows for no behavioural gain.
+   */
+  await sql`
+    alter table scans add column if not exists photo_urls jsonb
+  `;
+
   await sql`create index if not exists scans_user_ts_idx on scans (user_id, ts desc)`;
   await sql`create index if not exists scans_day_idx on scans (user_id, day)`;
   await sql`create index if not exists scans_watch_idx on scans (user_id, watching)`;

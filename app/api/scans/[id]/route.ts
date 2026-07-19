@@ -124,15 +124,27 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     // (since /api/photo/[id] needs the row) but still counted against storage.
     const rows = (await sql`
       delete from scans where id = ${id} and user_id = ${uid}
-      returning id, photo_url
-    `) as unknown as { id: string; photo_url: string | null }[];
+      returning id, photo_url, photo_urls
+    `) as unknown as {
+      id: string;
+      photo_url: string | null;
+      photo_urls: string[] | null;
+    }[];
 
     if (rows.length === 0) return notFound();
 
-    const photoUrl = rows[0].photo_url;
-    if (photoUrl && hasBlob()) {
+    // Every photo, not just the first. photo_url duplicates photo_urls[0], so
+    // dedupe or the second delete fails on an already-removed object.
+    const urls = Array.from(
+      new Set(
+        [...(rows[0].photo_urls ?? []), rows[0].photo_url].filter(
+          (u): u is string => !!u,
+        ),
+      ),
+    );
+    if (urls.length && hasBlob()) {
       try {
-        await del(photoUrl);
+        await Promise.all(urls.map((u) => del(u)));
       } catch (err) {
         // The row is gone, which is what was asked for. A failed blob delete
         // leaks storage — worth logging, not worth failing the request over,

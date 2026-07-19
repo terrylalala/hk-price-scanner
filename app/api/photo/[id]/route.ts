@@ -33,10 +33,23 @@ export async function GET(
     // Ownership is enforced here: a row belonging to someone else simply
     // doesn't match, so it is indistinguishable from a missing photo.
     const rows = (await sql`
-      select photo_url from scans where id = ${id} and user_id = ${uid}
-    `) as unknown as { photo_url: string | null }[];
+      select photo_url, photo_urls from scans where id = ${id} and user_id = ${uid}
+    `) as unknown as { photo_url: string | null; photo_urls: string[] | null }[];
 
-    const url = rows[0]?.photo_url;
+    // ?i=N selects which photo. photo_urls is the full list; photo_url is the
+    // fallback for rows written before multiple photos existed, where index 0
+    // is the only valid one.
+    const row = rows[0];
+    const all = Array.isArray(row?.photo_urls)
+      ? row.photo_urls
+      : row?.photo_url
+        ? [row.photo_url]
+        : [];
+
+    const iParam = Number(req.nextUrl.searchParams.get("i"));
+    const index = Number.isFinite(iParam) && iParam > 0 ? Math.floor(iParam) : 0;
+
+    const url = all[index];
     if (!url) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }

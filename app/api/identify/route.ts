@@ -21,6 +21,16 @@ type AllowedMediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 // Reject absurdly large payloads early (base64 chars). ~10MB of base64.
 const MAX_BASE64_LENGTH = 10_000_000;
 
+/**
+ * Views of one product per request.
+ *
+ * Three is enough for the case this exists to fix — a product, its spec card,
+ * and shop signage — and bounds the payload. A shelf photo that needs more than
+ * three angles is one the shopper should reframe, not one the model should
+ * squint harder at.
+ */
+const MAX_IMAGES = 3;
+
 // Structured-output schema (OpenAPI subset), guaranteeing parseable fields.
 const IDENTITY_SCHEMA = {
   type: Type.OBJECT,
@@ -98,38 +108,56 @@ export async function POST(req: NextRequest) {
   const quota = await consume(ownerId(authz.user), "identify");
   if (!quota.allowed) return rateLimited(quota.limit);
 
-  let body: { imageBase64?: string; mediaType?: string };
+  let body: {
+    imageBase64?: string;
+    mediaType?: string;
+    images?: { imageBase64?: string; mediaType?: string }[];
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { imageBase64, mediaType } = body;
+  // Accepts either one image or several views of the SAME product. The single
+  // form is kept so nothing that already calls this route has to change.
+  const incoming =
+    Array.isArray(body.images) && body.images.length > 0
+      ? body.images
+      : [{ imageBase64: body.imageBase64, mediaType: body.mediaType }];
 
-  if (!imageBase64 || typeof imageBase64 !== "string") {
+  if (incoming.length > MAX_IMAGES) {
     return NextResponse.json(
-      { error: "Missing 'imageBase64' (base64 image data, no data: prefix)." },
+      { error: `Too many photos. Send at most ${MAX_IMAGES}.` },
       { status: 400 },
     );
   }
-  if (!mediaType || !ALLOWED_MEDIA_TYPES.includes(mediaType as AllowedMediaType)) {
-    return NextResponse.json(
-      { error: `Unsupported media type. Use one of: ${ALLOWED_MEDIA_TYPES.join(", ")}.` },
-      { status: 400 },
-    );
-  }
 
-  // Strip an accidental data: URL prefix if the client sent one.
-  const data = imageBase64.includes(",")
-    ? imageBase64.slice(imageBase64.indexOf(",") + 1)
-    : imageBase64;
-
-  if (data.length > MAX_BASE64_LENGTH) {
-    return NextResponse.json(
-      { error: "Image is too large. Please use a smaller photo." },
-      { status: 413 },
-    );
+  const parts: { inlineData: { mimeType: string; data: string } }[] = [];
+  for (const img of incoming) {
+    const b64 = img?.imageBase64;
+    const mt = img?.mediaType;
+    if (!b64 || typeof b64 !== "string") {
+      return NextResponse.json(
+        { error: "Missing 'imageBase64' (base64 image data, no data: prefix)." },
+        { status: 400 },
+      );
+    }
+    if (!mt || !ALLOWED_MEDIA_TYPES.includes(mt as AllowedMediaType)) {
+      return NextResponse.json(
+        { error: `Unsupported media type. Use one of: ${ALLOWED_MEDIA_TYPES.join(", ")}.` },
+        { status: 400 },
+      );
+    }
+    // Strip an accidental data: URL prefix if the client sent one.
+    const data = b64.includes(",") ? b64.slice(b64.indexOf(",") + 1) : b64;
+    if (data.length > MAX_BASE64_LENGTH) {
+      return NextResponse.json(
+        { error: "Image is too large. Please use a smaller photo." },
+        { status: 413 },
+      );
+    }
+    parts.push({ inlineData: { mimeType: mt, data } });
   }
 
   try {
@@ -140,9 +168,12 @@ export async function POST(req: NextRequest) {
         {
           role: "user",
           parts: [
-            { inlineData: { mimeType: mediaType, data } },
+            ...parts,
             {
-              text: "Identify this product and read the price tag if one is visible.",
+              text:
+                parts.length > 1
+                  ? `These ${parts.length} photos are DIFFERENT VIEWS OF THE SAME single product — typically the product itself, its printed spec or price card, and possibly shop signage. Combine them: read the model number from whichever photo shows it legibly, and the price from whichever shows the tag. They are not separate products, and you should return exactly one.`
+                  : "Identify this product and read the price tag if one is visible.",
             },
           ],
         },

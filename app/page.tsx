@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import CameraCapture, { CapturedImage } from "@/components/CameraCapture";
+import CameraCapture, { AddPhoto, CapturedImage } from "@/components/CameraCapture";
 import TabBar, { Tab } from "@/components/TabBar";
 import ScanList from "@/components/ScanList";
 import SettingsTab from "@/components/SettingsTab";
@@ -60,6 +60,7 @@ function unitPrice(draft: Draft): number | null {
 const SCAN_KEY = "price-scanner:scan";
 
 interface SavedScan {
+  photos?: CapturedImage[] | null;
   photo?: CapturedImage | null;
   identity: ProductIdentity | null;
   draft: Draft;
@@ -95,7 +96,16 @@ export default function Home() {
   const [unreadable, setUnreadable] = useState(false);
   const [district, setDistrict] = useState("");
   const [tab, setTab] = useState<Tab>("scan");
-  const [photo, setPhoto] = useState<CapturedImage | null>(null);
+  /**
+   * Every photo taken for this scan, in capture order.
+   *
+   * The first is taken as before and identified immediately — the common case
+   * is one photo and should stay one tap. Extra views are added from the confirm
+   * step, where you can already see that identification went wrong, which is
+   * exactly the D45 situation: one product, three competing labels, and a
+   * fabricated model number.
+   */
+  const [photos, setPhotos] = useState<CapturedImage[]>([]);
   const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [draft, setDraft] = useState<Draft>({
     name: "",
@@ -119,7 +129,9 @@ export default function Home() {
       if (saved) {
         const s = JSON.parse(saved) as SavedScan;
         if (s.identity && s.draft) {
-          setPhoto(s.photo ?? null);
+          // `photo` is the pre-multi-photo shape; keep reading it so a scan
+          // saved by an older build still restores.
+          setPhotos(s.photos ?? (s.photo ? [s.photo] : []));
           setIdentity(s.identity);
           setDraft(s.draft);
           setResult(s.result ?? null);
@@ -141,11 +153,11 @@ export default function Home() {
         sessionStorage.removeItem(SCAN_KEY);
         return;
       }
-      save({ photo, identity, draft, result });
+      save({ photos, identity, draft, result });
     } catch {
       // Quota or private-mode failures are non-fatal; the app still works.
     }
-  }, [restored, phase, photo, identity, draft, result]);
+  }, [restored, phase, photos, identity, draft, result]);
 
   // The scan stays on one screen and results append below it, so after a search
   // the interesting part is off-screen. Bring it into view rather than leaving
@@ -155,18 +167,27 @@ export default function Home() {
     resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [phase]);
 
-  async function identify(img: CapturedImage) {
+  /** Identify from the first photo. */
+  function identify(img: CapturedImage) {
+    return identifyFrom([img]);
+  }
+
+  /** Add a view and re-identify from every photo together. */
+  function addPhoto(img: CapturedImage) {
+    return identifyFrom([...photos, img]);
+  }
+
+  async function identifyFrom(list: CapturedImage[]) {
     setError("");
     setUnreadable(false);
-    setPhoto(img);
+    setPhotos(list);
     setPhase("identifying");
     try {
       const res = await fetch("/api/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: img.base64,
-          mediaType: img.mediaType,
+          images: list.map((i) => ({ imageBase64: i.base64, mediaType: i.mediaType })),
         }),
       });
       const data = await res.json();
@@ -265,7 +286,7 @@ export default function Home() {
           searchSuggestionsHtml: priced.searchSuggestionsHtml,
           // Already downscaled to 1600px by CameraCapture. Optional: the route
           // saves the scan regardless if the upload fails.
-          photoBase64: photo?.base64,
+          photosBase64: photos.map((p) => p.base64),
         }),
       });
       if (!res.ok && res.status !== 501) {
@@ -282,7 +303,7 @@ export default function Home() {
     setError("");
     setUnreadable(false);
     setDistrict("");
-    setPhoto(null);
+    setPhotos([]);
     setIdentity(null);
     setResult(null);
     setDraft({ name: "", brand: "", model: "", tagPrice: "", packQuantity: "1" });
@@ -359,7 +380,8 @@ export default function Home() {
         */}
         {(phase === "confirm" || phase === "searching") && identity && (
           <ConfirmStep
-            photo={photo}
+            photos={photos}
+            onAddPhoto={addPhoto}
             identity={identity}
             draft={draft}
             onChange={setDraft}
@@ -379,7 +401,7 @@ export default function Home() {
         */}
         {phase === "results" && result && (
           <>
-            <ScanSummary photo={photo} draft={draft} onEdit={editDetails} />
+            <ScanSummary photo={photos[0] ?? null} draft={draft} onEdit={editDetails} />
             <div ref={resultsRef}>
               <div className="stack">
                 <Results
@@ -447,7 +469,8 @@ function Busy({ label }: { label: string }) {
 }
 
 function ConfirmStep({
-  photo,
+  photos,
+  onAddPhoto,
   identity,
   draft,
   onChange,
@@ -455,7 +478,8 @@ function ConfirmStep({
   onCancel,
   busy,
 }: {
-  photo: CapturedImage | null;
+  photos: CapturedImage[];
+  onAddPhoto: (img: CapturedImage) => void;
   identity: ProductIdentity;
   draft: Draft;
   onChange: (d: Draft) => void;
@@ -468,10 +492,40 @@ function ConfirmStep({
 
   return (
     <>
-      {photo && (
+      {photos.length > 0 && (
         <div className="card">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="preview" src={photo.dataUrl} alt="The product you photographed" />
+          <img
+            className="preview"
+            src={photos[photos.length - 1].dataUrl}
+            alt="The product you photographed"
+          />
+          {photos.length > 1 && (
+            <div className="thumb-strip">
+              {photos.map((p, i) => (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img key={i} className="thumb" src={p.dataUrl} alt={`View ${i + 1}`} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/*
+        Adding a view re-runs identification with every photo together. Offered
+        here rather than in the capture flow so the common single-photo case
+        stays one tap — and this is where you can already see identification has
+        gone wrong, which is precisely the case it fixes: a shelf where one
+        product faces several labels.
+      */}
+      {photos.length < 3 && (
+        <div className="card center">
+          <AddPhoto onCapture={onAddPhoto} onError={() => {}} disabled={busy} />
+          <p className="note" style={{ marginTop: 8 }}>
+            {identity.model && identity.modelVerbatim
+              ? "Add a closer view if anything above looks wrong."
+              : "Add a close photo of the printed spec or price card — it is read together with this one."}
+          </p>
         </div>
       )}
 

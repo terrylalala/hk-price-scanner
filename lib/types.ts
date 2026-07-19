@@ -141,6 +141,8 @@ export interface Scan {
   notes?: string;
   /** True when a photo is stored. The Blob URL itself never reaches the client. */
   hasPhoto: boolean;
+  /** How many photos this scan has; fetch each via /api/photo/[id]?i=N. */
+  photoCount: number;
   /** Whether the user is tracking this product on the Watch tab. */
   watching: boolean;
 }

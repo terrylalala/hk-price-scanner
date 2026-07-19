@@ -346,6 +346,23 @@ a {
   flex-shrink: 0;
 }
 
+/* Thumbnails of the other views taken for one scan. */
+.thumb-strip {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.thumb-strip .thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
 /* ---------- tab bar ---------- */
 
 /* Room for the fixed bar plus the iOS home indicator, so the last card in a
