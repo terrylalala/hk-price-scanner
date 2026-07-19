@@ -42,19 +42,15 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
    * container, where its painting depends on ancestor stacking contexts. That
    * is good practice on its own.
    *
-   * It did NOT fix the open question below, and this comment should not be read
-   * as claiming it did.
-   *
-   * UNRESOLVED, in the in-app preview browser only: the semi-transparent
-   * backdrop photographs as fully transparent — the page behind stays at full
-   * brightness. Everything measurable says it should be dark: computed
-   * background rgba(0,0,0,0.9), opacity 1, position fixed at the full viewport,
-   * no transform/filter/contain/isolation on any ancestor, and it hit-tests
-   * topmost at the title, the cards and the tab bar. Forcing the SAME element to
-   * an opaque colour paints correctly, and a cloneNode of it carrying the same
-   * class also paints correctly. Cause not found; it may well be specific to
-   * that browser's compositor rather than to this CSS. Verify on a real device
-   * before changing anything here.
+   * RESOLVED — and the resolution is worth keeping, because the investigation
+   * was long and pointed the wrong way. The in-app preview browser photographs
+   * this backdrop as fully transparent, while on a real phone it renders
+   * correctly. Every measurement had already said the CSS was fine (computed
+   * colour, full-viewport geometry, hit-testing topmost, no ancestor
+   * transform/filter/contain); an opaque colour on the same element painted,
+   * and a cloneNode of it painted. All of that was true and none of it was a
+   * bug. **Do not trust that browser's screenshots for full-screen overlays —
+   * check a device.**
    */
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);

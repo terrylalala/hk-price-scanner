@@ -382,7 +382,10 @@ a {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.9);
+  /* Solid, not translucent. At 0.9 the page still read through clearly enough
+     to make out the "History" heading behind the photo, which is exactly the
+     competing detail a photo viewer should remove. */
+  background: #000;
   display: flex;
   align-items: center;
   justify-content: center;

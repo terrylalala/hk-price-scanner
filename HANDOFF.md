@@ -560,10 +560,19 @@ beyond family, since a shared password cannot be revoked from one person.
   Back returns to the **Scan tab**, because the selected tab and the open detail
   are component state a reload discards. That is a user-reported bug, now fixed
   with an in-app overlay in `ScanDetail`.
-- **The preview tool's screenshots composite fixed-position layers without their
-  background**, so a full-screen overlay photographs as transparent even when it
-  is not. Verify overlays with computed style plus `elementFromPoint`, not the
-  screenshot — the backdrop above looked broken and was not.
+- **The in-app preview browser photographs full-screen overlays as transparent
+  when they are not.** Confirmed on a real phone: the viewer's backdrop renders
+  correctly there. This cost a long investigation that produced only correct
+  measurements — computed colour, full-viewport geometry, `elementFromPoint`
+  topmost at every point, no ancestor transform/filter/contain, an opaque colour
+  on the same element painting fine, and a `cloneNode` painting fine. Every one
+  of those was true and none indicated a bug.
+  - Two wrong calls were made along the way and both were stated confidently
+    before being tested: first that it was a screenshot artefact (disproved
+    immediately by an opaque probe), then that portalling to `document.body`
+    fixed it (it changed nothing). The portal was kept because a modal should
+    not paint inside a layout container, not because it fixed this.
+  - **Check a device before believing an overlay is broken.**
 - **Anything added to `photo_urls` must also be added to the DELETE path.**
   Thumbnails would otherwise reproduce the orphaned-blob leak already proven
   once (714 KB stranded), just smaller and twice as many.
