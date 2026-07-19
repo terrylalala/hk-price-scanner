@@ -417,6 +417,40 @@ item is a foreground green clock, so `QHE204S` may have come from a different bo
 Same class as finding #9 (price and identity drawn from different labels), one
 level subtler, and the current fix does not catch it.
 
+**11. The public URL is unauthenticated, and per-user rate limits will NOT bound
+the bill once accounts exist.** Raised while planning to share the app with
+family. Two separate things, and the second is the one that surprises people.
+
+**Today:** <https://hk-price-scanner.vercel.app> has no password and no sign-in.
+Anyone with the link can spend the Gemini quota, on a Tier 1 project with billing
+enabled. What limits the damage is accidental — `ownerId()` returns `'local'` for
+*everyone*, so all visitors share ONE 40/day counter.
+
+**That accident reverses the moment accounts are added**, because the caps become
+per-person:
+
+| | today (shared identity) | 5 real accounts |
+|---|---|---|
+| price searches/day | 40 | 200 |
+| grounding queries/month | ~6,000 | ~30,000 |
+| cost against 5,000 free | ~US$14 | **~US$350** |
+
+So per-user rate limits stop one person hammering the app; they do not bound
+spend. **Adding accounts requires adding a GLOBAL cap alongside the per-user
+one**, or a $14 worst case becomes $350.
+
+**Mitigation shipped:** a shared-password gate (`lib/gate.ts`, `middleware.ts`,
+`/login`). Not accounts — everyone who enters the password still shares one
+history and one quota, and the login screen says so rather than implying
+otherwise. **Disabled unless `APP_PASSWORD` is set**, so local dev and any
+deployment that has not opted in are unchanged. Set it in Vercel to close the
+public URL.
+
+The schema was already ready for real accounts: every table carries `user_id`
+defaulted to `'local'`, `accountsEnabled()` is the switch, and `requireUser()`
+fails closed with 501 if the `AUTH_*` vars appear before sign-in is built. So
+accounts remain a config change plus an Auth.js branch — **plus that global cap.**
+
 ## Gotchas already paid for (do not rediscover)
 
 - **In a HK electronics shop, the model number is not on the product — it is on
