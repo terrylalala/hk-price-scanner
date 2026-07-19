@@ -223,7 +223,7 @@ export function AddPhoto({
           disabled={disabled}
           onClick={() => cameraRef.current?.click()}
         >
-          + Take another
+          + Take another angle
         </button>
         <button
           className="btn quiet small"
