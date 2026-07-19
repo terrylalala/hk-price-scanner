@@ -537,6 +537,35 @@ a shared history may be a feature ("we already priced this at HK$469"). Wait for
 someone to actually ask for separation. Revisit sooner if the app is shared
 beyond family, since a shared password cannot be revoked from one person.
 
+## Finding #1 is addressed: crop-to-one-product (20 Jul)
+
+The crowded-shelf failure has a fix, and it is measured rather than assumed.
+Same photo (a Mong Kok shoe wall, 5712×4284, roughly 50 products and 50 tags),
+same `/api/identify`, one request each:
+
+| | whole shelf | crop of one shoe |
+|---|---|---|
+| name | Mizuno Wave Rider 26 | **Salomon Pulsar Trail** |
+| tagPrice | 840 | **960** |
+| `modelVerbatim` | **false** | **true** |
+| confidence | 0.8 | 0.95 |
+
+The whole-shelf answer is wrong in precisely the shape of findings #5 and #9: an
+arbitrary product out of fifty, a price lifted from some other tag, a model
+number that was never on a card (`modelVerbatim: false`) — and **0.8 confidence
+anyway**. The crop read `472100 / PULSAR TRAIL` and `$960`, both verbatim from
+the tag in frame.
+
+Two things this proves beyond the headline:
+
+- **`modelVerbatim` earns its keep.** It was the only field that flagged the
+  whole-shelf answer as untrustworthy. Confidence did not.
+- **Cropping beats adding photos, and the earlier attempt was the wrong idea.**
+  Multi-photo identify was added hoping to fix this and did not; more views
+  never say *which* product. Do not revisit it.
+
+Caveat: one photo, one trial. The mechanism is demonstrated, not the hit rate.
+
 ## Local dev runs on a SEPARATE Neon branch (19 Jul)
 
 `.env.local` points at the Neon **`dev`** branch; production (`main`) is
