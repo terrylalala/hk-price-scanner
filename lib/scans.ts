@@ -34,6 +34,7 @@ export interface ScanRow {
   citations: Citation[] | null;
   notes: string | null;
   watching: boolean;
+  search_suggestions_html: string | null;
   /** Server-side only. Mapped to `hasPhoto`; the URL never reaches the client. */
   photo_url: string | null;
 }
@@ -74,6 +75,7 @@ export function rowToScan(row: ScanRow): Scan {
     bestSource: row.best_source,
     quotes: Array.isArray(row.quotes) ? row.quotes : [],
     citations: Array.isArray(row.citations) ? row.citations : [],
+    searchSuggestionsHtml: row.search_suggestions_html ?? "",
     notes: row.notes ?? undefined,
     // The Blob URL is never serialized. The client learns only that one exists
     // and fetches it through /api/photo/[id], which re-checks ownership.

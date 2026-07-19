@@ -260,6 +260,9 @@ export default function Home() {
           district,
           quotes: priced.quotes,
           citations: priced.citations,
+          // Required to redisplay this scan's prices later without breaching
+          // the Search Suggestions term. See lib/db.ts.
+          searchSuggestionsHtml: priced.searchSuggestionsHtml,
         }),
       });
       if (!res.ok && res.status !== 501) {

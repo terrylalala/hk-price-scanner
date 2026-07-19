@@ -88,6 +88,21 @@ async function initSchema(): Promise<void> {
       photo_url    text
     )
   `;
+  /**
+   * Added after the table shipped, so it arrives as an ALTER rather than in the
+   * CREATE above. `add column if not exists` keeps ensureSchema() idempotent and
+   * avoids needing migration tooling for a single column.
+   *
+   * It exists for a compliance reason, not a product one. Google's terms require
+   * Search Suggestions to be displayed whenever Search grounding is used, so a
+   * saved scan cannot show its grounded price list without them. Rows written
+   * before this column existed have NULL here, and the UI must degrade rather
+   * than render the price list without suggestions.
+   */
+  await sql`
+    alter table scans add column if not exists search_suggestions_html text
+  `;
+
   await sql`create index if not exists scans_user_ts_idx on scans (user_id, ts desc)`;
   await sql`create index if not exists scans_day_idx on scans (user_id, day)`;
   await sql`create index if not exists scans_watch_idx on scans (user_id, watching)`;

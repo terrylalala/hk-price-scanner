@@ -715,7 +715,30 @@ it is written out here.
       behaviour.
 
 
-13. **Persist advice** (candidate, evidence-gated). `/api/advice` output is a
+13. ~~History detail view~~ — **DONE**, and it forced the project's first schema
+    migration. `components/ScanDetail.tsx`, opened by tapping a scan's title.
+
+    **The compliance dependency is the point, not an aside.** A saved scan's
+    price list is still grounded output, so redisplaying it requires Search
+    Suggestions — and the table never stored them. `lib/db.ts` now adds
+    `search_suggestions_html` via `alter table ... add column if not exists`,
+    which keeps `ensureSchema()` idempotent without migration tooling.
+
+    Rows written before that column **degrade rather than render bare**: the
+    detail shows "Prices not available" instead of a price list without
+    suggestions. Verified both paths — an old row degrades, a re-saved row shows
+    6 quotes, 6 outbound links, rendered Suggestions and the disclaimer.
+
+    The disclaimer is deliberately reworded here: these prices were true *when
+    the scan was taken*, which may be weeks ago. Staleness matters more in
+    history than in live results.
+
+    Observation for task 7: district data shows up well in this view —
+    `sham-shui-po` on a Price.com.hk dealer, "Capital Computer (正都電腦) ·
+    Located in Golden Computer Arcade". Local dealers do carry locations even
+    though chains do not.
+
+14. **Persist advice** (candidate, evidence-gated). `/api/advice` output is a
     billed call and is currently thrown away — there is no column, so reopening a
     saved scan regenerates it from scratch. The advice is genuinely worth keeping:
     on a real run it named Shun Hing (信興) as Panasonic's HK warranty agent and
@@ -724,12 +747,12 @@ it is written out here.
     does `create table if not exists`. **Do not build it until the regeneration is
     actually annoying**; one wasted call is cheaper than a migration nobody needed.
 
-14. **Attach photos to saved scans** (blocked on Blob). `photo_url` is always null
+15. **Attach photos to saved scans** (blocked on Blob). `photo_url` is always null
     so `hasPhoto` is false and `/api/photo/[id]` has nothing to serve. History
     shows product names with no pictures. `hasBlob()` already degrades cleanly, so
     this is provisioning plus an upload path, not a fix.
 
-15. **Watch is a list, not a watch.** Nothing writes to `price_points`, so tracked
+16. **Watch is a list, not a watch.** Nothing writes to `price_points`, so tracked
     products never re-check and the table stays empty. Needs a re-check action or
     a scheduled job before "Watch" means anything beyond a filter.
 

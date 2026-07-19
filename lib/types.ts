@@ -128,6 +128,16 @@ export interface Scan {
   bestSource: string;
   quotes: PriceQuote[];
   citations: Citation[];
+  /**
+   * Google's Search Suggestions markup, as captured at scan time.
+   *
+   * Stored, not merely passed through, because a saved scan's price list is
+   * still grounded output: showing it later without these would breach the same
+   * term that makes the live results render them. "" for scans saved before the
+   * column existed — the UI must then hide the price list rather than show it
+   * bare.
+   */
+  searchSuggestionsHtml: string;
   notes?: string;
   /** True when a photo is stored. The Blob URL itself never reaches the client. */
   hasPhoto: boolean;

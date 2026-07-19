@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Scan } from "@/lib/types";
+import ScanDetail from "./ScanDetail";
 import { districtById } from "@/lib/hkDistricts";
 
 /**
@@ -39,6 +40,7 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
   const [scans, setScans] = useState<Scan[] | null>(null);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [openId, setOpenId] = useState("");
 
   const load = useCallback(async () => {
     setError("");
@@ -94,6 +96,9 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
     }
   }
 
+  const open = scans?.find((s) => s.id === openId);
+  if (open) return <ScanDetail scan={open} onBack={() => setOpenId("")} />;
+
   if (scans === null) {
     return (
       <div className="card center" role="status" aria-live="polite">
@@ -124,7 +129,14 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
           <div className="card scan-row" key={scan.id}>
             <div className="scan-row-head">
               <div className="scan-row-title">
-                <h3>{scan.product.name}</h3>
+                {/* The whole row is not a button: it contains Track and Delete,
+                    and nesting those inside a control makes the tap target
+                    ambiguous. The title alone opens the detail. */}
+                <h3>
+                  <button className="linkish" onClick={() => setOpenId(scan.id)}>
+                    {scan.product.name}
+                  </button>
+                </h3>
                 <p className="quote-meta">
                   {[
                     formatWhen(scan.timestamp),

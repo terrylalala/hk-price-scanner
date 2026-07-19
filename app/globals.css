@@ -451,6 +451,26 @@ a {
   font-family: inherit;
 }
 
+/* A heading that behaves as a link without looking like a button. */
+.linkish {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.linkish:hover {
+  text-decoration-color: var(--accent);
+}
+
 /* ---------- misc ---------- */
 
 .note {

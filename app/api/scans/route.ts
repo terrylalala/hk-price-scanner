@@ -74,6 +74,8 @@ interface CreateBody {
   citations?: Citation[];
   district?: string;
   notes?: string;
+  /** Required to redisplay the price list later; see lib/db.ts. */
+  searchSuggestionsHtml?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -130,7 +132,8 @@ export async function POST(req: NextRequest) {
         product_name, brand, model, category,
         tag_price, currency, store_name, district,
         confidence, assumptions,
-        best_price, best_source, quotes, citations, notes
+        best_price, best_source, quotes, citations, notes,
+        search_suggestions_html
       ) values (
         ${id}, ${uid}, ${now.toISOString()}, ${hongKongDay(now)},
         ${name}, ${str(p.brand)}, ${str(p.model)}, ${str(p.category)},
@@ -138,7 +141,8 @@ export async function POST(req: NextRequest) {
         ${num(p.confidence) ?? 0}, ${str(p.assumptions)},
         ${best?.price ?? null}, ${best?.store ?? ""},
         ${JSON.stringify(quotes)}, ${JSON.stringify(citations)},
-        ${str(body.notes) || null}
+        ${str(body.notes) || null},
+        ${str(body.searchSuggestionsHtml) || null}
       )
       returning *
     `) as unknown as ScanRow[];
