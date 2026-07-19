@@ -65,7 +65,7 @@ Rules:
 - Prefer the product's exact model. If you can only find a different variant or model, say which in the "note" field.
 - "exactModel" is REQUIRED on every quote and must be honest. Set it true ONLY if the listing is the same model the shopper scanned. Set it false for a different size, capacity, generation, colour-variant-with-its-own-SKU, bundle, or a similar-but-not-identical product — and name the actual listing in "note". Do not set it true because the price is close or the product looks alike. This flag decides whether the shopper is told they are overpaying, so a wrong true is worse than a cautious false.
 - Include the seller's name as shoppers know it (e.g. "Fortress", "Broadway", "HKTVmall", "Price.com.hk listing").
-- "url" must be the DIRECT PRODUCT PAGE you saw the price on, not the shop's home page. A shopper who taps it expects to land on this exact item. If you only have the home page, still give it, but never invent a product path that you did not see.
+- "url" must be a page you ACTUALLY SAW in a search result — copy it, do not reconstruct it. Prefer the direct product page. But if you did not see the exact product URL, give the shop's home page instead: never assemble a product URL from a remembered pattern or a guessed id. Many shops route on the numeric id alone and ignore the rest of the path, so a guessed id silently serves a completely different product under a URL that still reads like this one — far worse for the shopper than a home page.
 - If the seller has a known Hong Kong district or the listing names one, put it in "district"; otherwise "".
 
 Structure your reply in this order, JSON FIRST:
@@ -201,73 +201,39 @@ function hostOf(url: string): string {
   }
 }
 
-/** True when a URL points at a domain root rather than a specific page. */
-function isBareHomepage(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return (u.pathname === "" || u.pathname === "/") && !u.search;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * True when a URL is a browse/search page rather than one product.
+ * Replace every quote link that has a grounding citation for the same shop.
  *
- * Having a path is not enough to be useful: a real result was
- * `centralfield.com/product-category/HOM/?view=1&…`, which passed the
- * "not a home page" test and still dropped the shopper into a filtered
- * category listing to find the item themselves.
+ * THE MODEL FABRICATES PRODUCT URLS, and the failure is silent and severe.
+ * Verified against YOHO, whose routing keys on the numeric id and ignores the
+ * slug entirely:
  *
- * Deliberately conservative. A false positive here trades a working product
- * link for an opaque citation redirect, so this matches only patterns that are
- * unambiguously listings — note `/product-category/` is checked before
- * `/product/`, since the former contains the latter's substring.
- */
-function looksLikeListing(url: string): boolean {
-  try {
-    const u = new URL(url);
-    const path = u.pathname.toLowerCase();
-    // No `shop` here on purpose. Plenty of sites use /shop/<product-name> as a
-    // product URL, so it flags real links as listings. The one /shop/ category
-    // page observed came from a citation destination, which this function never
-    // sees — so including it would cost false positives and buy nothing.
-    const listingPath =
-      /\/(search|category|categories|product-category|collections|catalogue|catalog|brand)(\/|$)/.test(
-        path,
-      );
-    // Search-ish query keys, e.g. ?q=, ?s=, ?keyword=, ?query=
-    const searchQuery = /(^|&)(q|s|query|keyword|search|kw)=/.test(u.search.slice(1));
-    return listingPath || searchQuery;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Upgrade quote links that point at a shop's front door.
+ *   /product/183299-Xiaomi-D40-Ceiling-Lamp  (from a citation) → the D40. Correct.
+ *   /product/114945-Xiaomi-D40-Ceiling-Lamp  (from the model)  → redirects home.
+ *   /product/98144-Xiaomi-D40-Ceiling-Lamp-BHR9933GL (model)   → JBL headphones.
  *
- * The model writes `url` from memory and overwhelmingly returns the home page —
- * measured 4 of 5 on one run. Tapping "YOHO · HK$480" then dumps the shopper on
- * yohohongkong.com to hunt for the item themselves, which defeats the point of
- * the quote.
+ * Four different ids appeared for the same product across runs; only the
+ * citation-derived one was real. A shopper reported tapping "YOHO" on a ceiling
+ * light and landing on Yves Saint Laurent perfume.
  *
- * Grounding citations are usually better: they are pages Google actually
- * retrieved. Resolving every citation redirect once gave 7 of 9 real product
- * pages — but only 7. The other two were a category page and, for HKTVmall, a
- * literal search URL, because that is what Google had indexed. So a citation is
- * a better bet than a home page or a listing page, not a guarantee of a product
- * page, and some shops cannot be fixed from here at all: if a retailer only
- * exposes its catalogue through search URLs, every available link is a search URL.
+ * This is worse than a home page. The URL reads perfectly — it contains the
+ * right product name — and quietly serves something else, so no heuristic on the
+ * URL's shape can catch it. An earlier version of this function preferred a
+ * model URL whenever it "had a real path", on the reasoning that it named its
+ * destination honestly. That reasoning was untested and wrong: it names a
+ * destination it does not go to.
  *
- * Replaced: bare home pages, and browse/search listings (see looksLikeListing).
- * Left alone: any other model URL with a real path — it names its destination
- * honestly, whereas a citation is an opaque Google redirect, so it is only worth
- * trading down to when the alternative is useless.
+ * So: a citation always wins. Citations are pages Google actually retrieved, and
+ * resolving them once by hand gave 7 of 9 real product pages — the other two a
+ * category page and, for HKTVmall, a search URL, because that is what Google
+ * indexed. Not a guarantee, but a far better bet than a fabrication.
  *
- * Note the citation destination cannot be inspected here. It is an opaque
- * redirect, and following 8 of them would cost 8 HTTP round trips inside the
- * 50s search budget. Hence heuristics on the visible model URL only.
+ * The model URL survives only as a last resort, when no citation names that
+ * shop. Treat those links as unverified.
+ *
+ * The citation's destination cannot be checked here: it is an opaque redirect,
+ * and following 8 of them would cost 8 HTTP round trips inside the 50s search
+ * budget that successful searches already consume 46–48s of.
  */
 function withBestLinks(quotes: PriceQuote[], citations: Citation[]): PriceQuote[] {
   if (citations.length === 0) return quotes;
@@ -282,11 +248,12 @@ function withBestLinks(quotes: PriceQuote[], citations: Citation[]): PriceQuote[
     if (host && host.includes(".") && !byHost.has(host)) byHost.set(host, c.url);
   }
 
+  // No URL-shape test here any more, deliberately. A fabricated product URL is
+  // shaped exactly like a real one, so shape cannot distinguish them.
   return quotes.map((q) => {
     if (!q.url) return q;
-    if (!isBareHomepage(q.url) && !looksLikeListing(q.url)) return q;
-    const deep = byHost.get(hostOf(q.url));
-    return deep ? { ...q, url: deep } : q;
+    const cited = byHost.get(hostOf(q.url));
+    return cited ? { ...q, url: cited } : q;
   });
 }
 

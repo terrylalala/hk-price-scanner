@@ -312,16 +312,34 @@ look like empty results. Always check the HTTP status alongside the body.
   host off the URL returns Google for all of them and matches nothing. Google puts
   the real source domain in the title (`yohohongkong.com`). `withBestLinks()` in
   `/api/prices` depends on this.
+- **THE MODEL FABRICATES PRODUCT URLS, and the failure is silent and severe.
+  Never prefer a model `url` over a citation.** Verified against YOHO, which
+  routes on the numeric id and ignores the slug completely:
+
+  | URL | source | lands on |
+  |---|---|---|
+  | `/product/183299-Xiaomi-D40-Ceiling-Lamp` | citation | ✅ the D40 |
+  | `/product/114945-Xiaomi-D40-Ceiling-Lamp` | model | redirects to home page |
+  | `/product/98144-Xiaomi-D40-Ceiling-Lamp-BHR9933GL` | model | ❌ **JBL headphones** |
+
+  Four different ids appeared for the same product across runs; only the
+  citation-derived one was real. A shopper tapped "YOHO" on a ceiling light and
+  landed on Yves Saint Laurent perfume.
+
+  **No URL-shape heuristic can catch this** — a fabricated URL is shaped exactly
+  like a real one and even contains the right product name. An earlier version of
+  `withBestLinks()` kept a model URL whenever it "had a real path", reasoning that
+  it named its destination honestly. That reasoning was untested and wrong: it
+  names a destination it does not go to. The shape tests it relied on
+  (`isBareHomepage`, `looksLikeListing`) were deleted along with it — do not
+  reintroduce them believing they help here.
 - **A citation's destination cannot be inspected server-side.** It is an opaque
   redirect; resolving 8 of them costs 8 HTTP round trips inside a 50s budget that
-  successful searches already consume 46–48s of. Link-quality heuristics
-  therefore run on the model's visible URL only. Resolving them once by hand gave
+  successful searches already consume 46–48s of. Resolving them once by hand gave
   **7 of 9 real product pages** — the other two were a category page and, for
-  HKTVmall, a literal search URL. So a citation is a better bet than a home page,
-  not a guarantee.
-- **Model-written `url` values are mostly shop home pages** — measured 4 of 5 on
-  one run. Both the prompt and `withBestLinks()` exist to fix this; after both,
-  0 of 6 were bare. Do not assume the model returns product URLs.
+  HKTVmall, a literal search URL. Not a guarantee, but far better than a
+  fabrication, which is why a citation now always wins and the model URL survives
+  only when no citation names that shop. Treat those as unverified.
 - **Some retailers cannot be deep-linked at all, and that is not a bug to fix.**
   HKTVmall's own grounding citation is a search URL because that is what Google
   indexed. A shop that exposes its catalogue only through search or category URLs
