@@ -64,6 +64,7 @@ Rules:
 - If the product name is too generic to identify one specific model — "ASUS Laptop", "Samsung TV", "Bluetooth headphones" — then STOP. Do not choose a plausible specific model and price that instead. Return {"quotes":[]} and explain in the prose that a model number is needed, naming what to look for on the shelf label. Pricing a guessed model is the single worst thing you can do here: it produces a confident verdict about a product the shopper is not looking at.
 - Prefer the product's exact model. If you can only find a different variant or model, say which in the "note" field.
 - Include the seller's name as shoppers know it (e.g. "Fortress", "Broadway", "HKTVmall", "Price.com.hk listing").
+- "url" must be the DIRECT PRODUCT PAGE you saw the price on, not the shop's home page. A shopper who taps it expects to land on this exact item. If you only have the home page, still give it, but never invent a product path that you did not see.
 - If the seller has a known Hong Kong district or the listing names one, put it in "district"; otherwise "".
 
 Structure your reply in this order, JSON FIRST:
@@ -172,8 +173,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const quotes = parseQuotes(text);
     const citations = extractCitations(meta);
+    const quotes = withBestLinks(parseQuotes(text), citations);
 
     return NextResponse.json({
       summary: stripJsonBlock(text),
@@ -188,6 +189,61 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return handleError(err);
   }
+}
+
+/** Registrable-ish host, lowercased and stripped of "www.". "" when unparseable. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/** True when a URL points at a domain root rather than a specific page. */
+function isBareHomepage(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (u.pathname === "" || u.pathname === "/") && !u.search;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Upgrade quote links that point at a shop's front door.
+ *
+ * The model writes `url` from memory and overwhelmingly returns the home page —
+ * measured 4 of 5 on one run. Tapping "YOHO · HK$480" then dumps the shopper on
+ * yohohongkong.com to hunt for the item themselves, which defeats the point of
+ * the quote.
+ *
+ * Grounding citations do not have this problem: they are the pages Google
+ * actually retrieved, so they land on the product. Where a bare home page has a
+ * citation for the same host, swap in the citation.
+ *
+ * Only bare home pages are replaced. A model URL with a real path is left alone
+ * — it names the destination honestly, whereas a citation is an opaque Google
+ * redirect, so it is only worth trading down to when the alternative is useless.
+ */
+function withBestLinks(quotes: PriceQuote[], citations: Citation[]): PriceQuote[] {
+  if (citations.length === 0) return quotes;
+
+  // Key by TITLE, not by URL host. Every citation URL is a
+  // vertexaisearch.cloud.google.com redirect, so hostOf() on the URL returns
+  // Google for all of them and matches nothing. Google puts the real source
+  // domain in the title ("yohohongkong.com"), which is the only usable key.
+  const byHost = new Map<string, string>();
+  for (const c of citations) {
+    const host = c.title.trim().toLowerCase().replace(/^www\./, "");
+    if (host && host.includes(".") && !byHost.has(host)) byHost.set(host, c.url);
+  }
+
+  return quotes.map((q) => {
+    if (!q.url || !isBareHomepage(q.url)) return q;
+    const deep = byHost.get(hostOf(q.url));
+    return deep ? { ...q, url: deep } : q;
+  });
 }
 
 /** Pull the JSON block out of the prose and normalize it. */

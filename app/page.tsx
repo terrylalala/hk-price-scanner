@@ -36,6 +36,38 @@ interface Draft {
   tagPrice: string;
 }
 
+const SCAN_KEY = "price-scanner:scan";
+
+interface SavedScan {
+  photo?: CapturedImage | null;
+  identity: ProductIdentity | null;
+  draft: Draft;
+  result?: PriceResult | null;
+}
+
+/**
+ * Persist the current scan for the tab.
+ *
+ * sessionStorage rather than localStorage: a scan is about the shop you are
+ * standing in, so it should not still be sitting there next week.
+ *
+ * The photo is a base64 data URL and is by far the largest field — a 1600px
+ * JPEG can approach the ~5MB quota on its own. If the write is rejected, retry
+ * without it: losing the thumbnail is a much smaller loss than losing the
+ * prices, which cost a billed search to obtain.
+ */
+function save(scan: SavedScan) {
+  try {
+    sessionStorage.setItem(SCAN_KEY, JSON.stringify(scan));
+  } catch {
+    try {
+      sessionStorage.setItem(SCAN_KEY, JSON.stringify({ ...scan, photo: null }));
+    } catch {
+      // Private browsing or a hard quota wall. Nothing more to do.
+    }
+  }
+}
+
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
@@ -48,7 +80,47 @@ export default function Home() {
     tagPrice: "",
   });
   const [result, setResult] = useState<PriceResult | null>(null);
+  const [restored, setRestored] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Restore a scan in progress. Without this, anything that reloads the page —
+  // browser back after tapping a shop link, a swipe-back gesture, an OS tab
+  // eviction on mobile — drops the user on an empty camera screen with the
+  // results silently gone. /api/scans will supersede this; until it exists this
+  // is the difference between "back" working and losing the scan.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(SCAN_KEY);
+      if (saved) {
+        const s = JSON.parse(saved) as SavedScan;
+        if (s.identity && s.draft) {
+          setPhoto(s.photo ?? null);
+          setIdentity(s.identity);
+          setDraft(s.draft);
+          setResult(s.result ?? null);
+          setPhase(s.result ? "results" : "confirm");
+        }
+      }
+    } catch {
+      // Corrupt or unreadable storage is not worth surfacing — start clean.
+    }
+    setRestored(true);
+  }, []);
+
+  // Persist after the restore pass, never before: writing on the first render
+  // would clobber the saved scan with the empty initial state.
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      if (phase === "idle" || !identity) {
+        sessionStorage.removeItem(SCAN_KEY);
+        return;
+      }
+      save({ photo, identity, draft, result });
+    } catch {
+      // Quota or private-mode failures are non-fatal; the app still works.
+    }
+  }, [restored, phase, photo, identity, draft, result]);
 
   // The scan stays on one screen and results append below it, so after a search
   // the interesting part is off-screen. Bring it into view rather than leaving
