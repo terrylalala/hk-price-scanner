@@ -128,6 +128,20 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
         return (
           <div className="card scan-row" key={scan.id}>
             <div className="scan-row-head">
+              {/* Fetched through /api/photo, never from a Blob URL — the route
+                  re-checks ownership and the client is never told where the
+                  image actually lives. `hasPhoto` is what makes that safe to
+                  render unconditionally: rows saved before photos existed
+                  would otherwise request a 404 on every list render. */}
+              {scan.hasPhoto && (
+                <img
+                  className="thumb"
+                  src={`/api/photo/${scan.id}`}
+                  alt=""
+                  loading="lazy"
+                  onClick={() => setOpenId(scan.id)}
+                />
+              )}
               <div className="scan-row-title">
                 {/* The whole row is not a button: it contains Track and Delete,
                     and nesting those inside a control makes the tap target

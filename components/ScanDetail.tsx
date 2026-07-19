@@ -63,6 +63,39 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
             {scan.notes}
           </p>
         )}
+
+        {/*
+          Every photo taken for this scan, served through /api/photo/[id]?i=N.
+          The Blob URLs stay server-side; see that route for why.
+
+          `photoCount` drives this rather than `hasPhoto`, so a scan saved with
+          three views shows three. Old rows report a count of 1 from photo_url
+          alone, which keeps them working without a backfill.
+        */}
+        {scan.photoCount > 0 && (
+          <div className="thumb-strip">
+            {Array.from({ length: scan.photoCount }, (_, i) => (
+              <a
+                key={i}
+                href={`/api/photo/${scan.id}?i=${i}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open full size"
+              >
+                <img
+                  className="thumb"
+                  src={`/api/photo/${scan.id}?i=${i}`}
+                  alt={
+                    scan.photoCount > 1
+                      ? `Photo ${i + 1} of ${scan.photoCount} of ${scan.product.name}`
+                      : `Photo of ${scan.product.name}`
+                  }
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+        )}
       </div>
 
       {canShowPrices ? (
