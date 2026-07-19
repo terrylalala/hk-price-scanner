@@ -51,6 +51,7 @@ const IDENTITY_SCHEMA = {
     confidence: { type: Type.NUMBER },
     assumptions: { type: Type.STRING },
     searchTerms: { type: Type.STRING },
+    multipleProducts: { type: Type.BOOLEAN },
   },
   required: [
     "name",
@@ -67,6 +68,7 @@ const IDENTITY_SCHEMA = {
     "confidence",
     "assumptions",
     "searchTerms",
+    "multipleProducts",
   ],
   propertyOrdering: [
     "name",
@@ -83,6 +85,7 @@ const IDENTITY_SCHEMA = {
     "confidence",
     "assumptions",
     "searchTerms",
+    "multipleProducts",
   ],
 };
 
@@ -102,6 +105,7 @@ Return:
 - "confidence": 0 to 1, your overall confidence in the product identification.
 - "assumptions": one short sentence on what was unclear or assumed.
 - "searchTerms": a rich, search-ready description for finding this item — or ones like it — in online stores. Write it the way a shopper would type it, packing in what actually distinguishes the item: the kind of thing it is, its colour(s) and pattern, the material or fabric if you can judge it, the cut, shape or silhouette, and any standout feature (a print, a logo, a buckle, a heel shape, a collar style). Example: "women's cream ribbed-knit oversized cardigan, round horn buttons, drop shoulder". Fill this whenever the item has NO model number to look up — clothing, bags, shoes, accessories, homeware, food, cosmetics — because a plain name like "purple scarf" is too thin to match a real product against. Leave it "" when a brand and model already identify the item exactly (electronics, appliances), since the model number is the better query there.
+- "multipleProducts": true when the photo shows SEVERAL DISTINCT products a shopper could be asking about — a shelf or wall of different models, each its own box or item, often with its own price tag (e.g. six different camera boxes, a rack of different jackets, a row of different snacks). In that case which one the shopper means is genuinely ambiguous no matter how clearly you can read any single one, so identify the most prominent/central item BUT say in "assumptions" that several products are present and that cropping to one would help. Set it false when the photo is essentially one product (one item, or the same product repeated/stacked, or a product plus its own spec and price card). This is about ambiguity of INTENT, not your confidence in reading a label.
 
 If the photo contains no identifiable product, set confidence to 0 and explain in "assumptions".`;
 
@@ -282,6 +286,9 @@ function parseIdentity(text: string): ProductIdentity | null {
     confidence,
     assumptions: str(o.assumptions),
     searchTerms: str(o.searchTerms),
+    // Only an explicit true counts; a missing/malformed value means "one product"
+    // and simply skips the crop nudge, which is the safe default.
+    multipleProducts: o.multipleProducts === true || o.multipleProducts === "true",
   };
 }
 

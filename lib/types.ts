@@ -71,6 +71,17 @@ export interface ProductIdentity {
    * restored from the database reconstructs without it. See lib/scans.ts.
    */
   searchTerms?: string;
+  /**
+   * Whether the photo shows several distinct products the shopper could mean —
+   * a shelf of different models, a rack of different jackets. When true, the
+   * chosen product is only the most prominent guess, so the confirm step nudges
+   * the shopper to crop to the one they actually want before searching. This is
+   * ambiguity of INTENT, not low confidence in reading a label: a crowded shelf
+   * can be read perfectly and still be the wrong item.
+   *
+   * Optional and NOT persisted, like `searchTerms`.
+   */
+  multipleProducts?: boolean;
 }
 
 /** One price found by the grounded search. */

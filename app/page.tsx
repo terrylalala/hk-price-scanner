@@ -715,6 +715,21 @@ function ConfirmStep({
       {photos.length > 0 && (
         <div className="card center">
           {/*
+            The model flagged several distinct products in the frame, so the one
+            it priced is only its most-prominent guess — on the Tapo shelf it
+            picked the centre box at 0.95 confidence, which reads as certain and
+            hides that five other cameras were candidates. Surfaced right above
+            the crop button so the fix is one tap away, and only until a crop is
+            drawn (after which there is no ambiguity left to warn about).
+          */}
+          {identity.multipleProducts && !cropped && (
+            <div className="warning" style={{ marginBottom: 12 }}>
+              <strong>Several products in this photo.</strong> This read the most
+              prominent one — {draft.name || "the centre item"}. If you meant a
+              different one, draw a box around it below before searching.
+            </div>
+          )}
+          {/*
             ONE button, not two. "Pick a different product" and "Undo crop" read
             as the same intent — change what I selected — and splitting them put
             three competing actions on this screen.

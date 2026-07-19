@@ -50,10 +50,15 @@ const SEARCH_ATTEMPTS = 2;
  * the source links and Google's required Search Suggestions markup. So we ask
  * for JSON in the prose and parse it defensively instead.
  *
- * Thinking is left ENABLED, unlike the vision route. There, `thinkingBudget: 0`
- * stops thinking tokens eating the output budget on a pure extraction task.
- * Here the model has to reconcile several sources, and that is exactly what
- * thinking is for.
+ * Thinking is DISABLED (`thinkingBudget: 0`), same as the vision route. It was
+ * left on originally, on the theory that reconciling several sources is what
+ * thinking is for. Measured against a real product (Tapo C220), that theory did
+ * not hold: thinking added ~10s (27s → 17s) and produced no better answer —
+ * same verdict, actually one FEWER real quote. The grounded results carry the
+ * evidence; the model only has to report and compare them, which is not a task
+ * that needs a reasoning budget. Turning it off is the single biggest lever on
+ * this route's latency, and it widens the margin against the 60s platform kill
+ * that the broad similar search was hitting.
  */
 
 const SYSTEM_PROMPT = `You are a Hong Kong shopping researcher. Given a product, search for what it currently sells for IN HONG KONG and report real, specific prices you found.
@@ -253,8 +258,12 @@ export async function POST(req: NextRequest) {
         systemInstruction:
           mode === "similar" ? similarPrompt(similarScope) : SYSTEM_PROMPT,
         tools: [{ googleSearch: {} }],
-        // Generous: thinking tokens draw from this budget too, and a truncated
-        // reply loses the JSON block while still looking plausible in prose.
+        // Off, and worth ~10s per search — see the header comment. The grounded
+        // results carry the evidence; reporting and comparing them does not need
+        // a reasoning budget.
+        thinkingConfig: { thinkingBudget: 0 },
+        // Generous: a truncated reply loses the JSON block while still looking
+        // plausible in prose.
         maxOutputTokens: 8192,
         temperature: 0.2,
         abortSignal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
