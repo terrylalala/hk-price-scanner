@@ -21,13 +21,46 @@
 
 export type Tab = "scan" | "history" | "watch" | "treasures" | "settings";
 
+/**
+ * A faceted gem, drawn rather than typed.
+ *
+ * Unicode has no cut-diamond glyph — ◈ collided with History's ◇ and the
+ * pentagon ⬠ is the wrong shape and carries its own metrics, which is what
+ * pushed one label out of line. Drawing it also means the facets survive at
+ * 20px, which is the whole point of the shape.
+ *
+ * `currentColor` throughout, so it inherits the tab's active accent exactly as
+ * the text glyphs do. Filled when active, matching ◇→◆ and ☆→★.
+ */
+function GemIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path
+        d="M6 3 L18 3 L22 9 L12 21 L2 9 Z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      {/* Facets, hidden when filled — they would read as cracks on a solid
+          shape at this size. */}
+      {!filled && (
+        <g stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round">
+          <path d="M2 9 H22" />
+          <path d="M6 3 L9 9 L12 21 L15 9 L18 3" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
 const TABS: { id: Tab; label: string; icon: string; iconActive: string }[] = [
   { id: "scan", label: "Scan", icon: "◎", iconActive: "◉" },
   { id: "history", label: "History", icon: "◇", iconActive: "◆" },
   { id: "watch", label: "Wishlist", icon: "☆", iconActive: "★" },
-  // Five-sided, so it reads as a cut gem and — more usefully — does not
-  // collide with History's ◇/◆, which ◈ did at tab-bar size.
-  { id: "treasures", label: "Treasures", icon: "⬠", iconActive: "⬟" },
+  // Rendered as GemIcon rather than a glyph; these are unused for this tab but
+  // kept so the array stays one shape.
+  { id: "treasures", label: "Treasures", icon: "", iconActive: "" },
   { id: "settings", label: "Settings", icon: "○", iconActive: "●" },
 ];
 
@@ -51,10 +84,14 @@ export default function TabBar({
               aria-label={t.label}
               aria-current={isActive ? "page" : undefined}
             >
-              {/* data-tab lets one icon be size-corrected without giving every
-                  tab a bespoke class; ⬠/⬟ render narrower than the rest. */}
               <span className="ico" data-tab={t.id}>
-                {isActive ? t.iconActive : t.icon}
+                {t.id === "treasures" ? (
+                  <GemIcon filled={isActive} />
+                ) : isActive ? (
+                  t.iconActive
+                ) : (
+                  t.icon
+                )}
               </span>
               <span>{t.label}</span>
             </button>
