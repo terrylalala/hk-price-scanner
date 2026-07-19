@@ -42,8 +42,8 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 |---|---|
 | ✅ Scaffold, deps, typecheck clean | `npm run dev` works |
 | ✅ `lib/` — db schema, districts, rate limits, session, types | |
-| ✅ `/api/identify` — vision + structured output | passes on rendered tags, **fails on a real shelf photo — see below** |
-| ✅ `/api/prices` — grounded search | **passed: 6 real HK retailers** |
+| ✅ `/api/identify` — vision + structured output | passes on close-ups of a single item incl. a real shelf label; **fails on a multi-product shelf — see finding #1** |
+| ⚠️ `/api/prices` — grounded search | works, but **intermittently 500s at ~60s — see finding #2** |
 | ✅ Scan flow UI — capture → identify → confirm → search → results | `app/page.tsx`, verified end-to-end in browser |
 | ⬜ `/api/scans` CRUD, `/api/advice` | not started — **scans are not persisted; reload loses the result** |
 | ⬜ History / Watch / Settings tabs | not started |
@@ -72,7 +72,7 @@ the sibling project, and the same trap is waiting here:
 tabs (`today | history | coach | settings`). Nothing imports it. Retab or delete
 it when the tab bar is actually built — do not assume it fits this app.
 
-## Three verified findings that should shape the next session
+## Verified findings that should shape the next session
 
 **1. Gate 1 FAILED on a real photo — but not the way this doc predicted.**
 Tested against a real Mong Kok ASUS counter display (a shelf of ~12 laptops,
@@ -104,7 +104,68 @@ laptop against a guessed one. A shopper could walk away from a good deal on that
 The current mitigation is a missing-model warning in the confirm step
 (`app/page.tsx`), independent of confidence. That is a backstop, not a fix.
 
-**2. `/api/prices` sometimes does not ground at all — intermittently.** One run
+**Update — two further real photos, both PASSED.** The remedy (get close to one
+item) is validated; only the multi-product shelf case remains broken.
+
+*A. Plaud Note Pro retail box, close up* (`confidence: 1.0`)
+```
+name: "Plaud Note Pro AI Note Taker"   brand: "Plaud"   model: "Note Pro"
+tagPrice: null   storeName: ""   locationHint: ""
+```
+Three predicted failures did **not** materialise, and the predictions are recorded
+here so nobody re-derives them as risks: the Vast World Limited warranty sticker
+did *not* leak 鰂魚涌 into `locationHint` (predicted an `eastern` false positive);
+the distributor was *not* misread as `storeName`; and the `$165` electronics
+recycling levy on a paper in frame was *not* misread as the price. `tagPrice: null`
+was correct — there is no price on the box. Downstream: 6 grounded quotes, all at
+HK$1,399, 8 citations. Photo was stored rotated 90° and that caused no trouble.
+
+*B. Supermarket shelf label, Korean raspberry wine* (`confidence: 0.95`) — the
+harder and more valuable test, because it has a **dual price and neither is
+crossed out**: 直送公價 `$69.00` versus 會員77折實價 `$53.10`, the member price
+rendered much larger and bolder.
+```
+name: "Seon Un Korean Raspberry Wine 375ml"   tagPrice: 69
+assumptions: "Assumed the standard non-member price of 69.00 HKD as the
+              primary tag price…"
+```
+It chose the standard price over the visually dominant member price and explained
+itself. The existing prompt rule only covers crossed-out originals and instalments;
+**conditional member pricing is a third decoy class it handled without being told
+to.** Trilingual label (Chinese/Korean/English) was no obstacle.
+
+**Known defect from this testing:** the missing-model warning is electronics-specific
+and fires spuriously on categories that have no model numbers. On the wine it told
+the user "Add the model from the label if you can — it is the single biggest
+accuracy win", which is useless advice for a bottle. Gate it by category.
+
+**2. `/api/prices` breaches a hard 60-second ceiling, and `maxDuration = 90` is a
+promise the plan will not keep.** The wine search 500'd twice. Not a refusal —
+`TypeError: fetch failed` / `UND_ERR_SOCKET: other side closed`, `bytesRead: 0`.
+Sorting every observed run by duration makes the ceiling obvious:
+
+| outcome | durations |
+|---|---|
+| 500 | 60.5s, 61.1s, 61.4s |
+| 200 | 24s, 29s, 37s, 47s, 49s |
+
+Duration-correlated and intermittent — the same query failed at 60.5s and then
+succeeded at 37.5s. The local cause may be a sandbox proxy and is unproven, **but
+that does not matter**, because Vercel's Hobby plan caps `maxDuration` at 60s
+(raised from 10s in May 2024) and `app/api/prices/route.ts` declares **90**. The
+route is written expecting time it will never get. Successful runs already reach
+49s, so the headroom is thin even when it works.
+
+<https://vercel.com/changelog/vercel-functions-for-hobby-can-now-run-up-to-60-seconds>
+
+**This changes the design of the retry in finding #3.** A naive "call it again"
+roughly doubles duration and would near-guarantee a breach. Any retry has to fit
+inside a ~50s total budget, not sit on top of a call that already takes 49s.
+
+Also seen in today's logs: `finishReason=MAX_TOKENS` with `thoughtsTokenCount: 687`
+— the truncation the gotchas below warn about, still occurring in practice.
+
+**3. `/api/prices` sometimes does not ground at all — intermittently.** One run
 returned `grounded: false` with 8 priced quotes, zero citations and zero Search
 Suggestions: the model answered from memory instead of searching. Re-running the
 identical request twice gave `true`, `true`. **It is nondeterministic**, which
@@ -117,17 +178,25 @@ warns when `grounded` is false — but **that branch has never been observed liv
 only reasoned about, because the condition cannot be triggered on demand.
 Retrying the call once when grounding does not fire is still an open task.
 
-**3. The district filter is weaker than planned.** Gate 2 returned six genuine HK
-prices with an empty `district` on every one; the real-photo run added five more
-of the same. Eleven-plus results, effectively no districts, because grounded
-results are overwhelmingly *online* retailers with no physical location. The
-"filter by nearest store" feature applies to a small minority of results. See
-task #43 — recommend the online/in-store split plus a manually-set home district.
+**4. The district filter is weaker than planned — but NOT dead. This finding was
+previously too pessimistic; read the revision before deleting anything.** Gate 2
+returned six genuine HK prices with an empty `district` on every one; the ASUS run
+added five more of the same. That looked like eleven-for-eleven and the feature
+looked worthless.
 
-Curiosity worth watching, not yet a conclusion: the only run that *did* populate
-districts (`wan-chai`, `sham-shui-po`, `yuen-long`) was the ungrounded one, where
-they came from recalled price.com.hk listings. n=1, but "districts appear when
-the data is least verifiable" would be an unpleasant pattern if it holds.
+**Revision:** the Plaud run returned **2 districts out of 6** (`wan-chai`,
+`eastern`) — and both came from **price.com.hk dealer listings**, not the big
+chains. So districts are not absent, they are *concentrated in local dealer
+listings*. Big-chain online storefronts have no location to report; small dealers
+do. The earlier ungrounded run that populated `wan-chai / sham-shui-po / yuen-long`
+also drew on price.com.hk listings, which now looks like the same mechanism rather
+than the "districts appear when data is least verifiable" pattern feared earlier —
+that suspicion is **retracted**.
+
+Practical read: the "filter by nearest store" feature applies to a minority of
+results, but a real and identifiable one. See task #43 — the online/in-store split
+plus a manually-set home district still looks right, but it should *keep* district
+data where dealers provide it rather than discarding the field.
 
 ## Gotchas already paid for (do not rediscover)
 
@@ -166,18 +235,28 @@ the data is least verifiable" would be an unpleasant pattern if it holds.
 The task list from the originating session does not survive into a new one, so
 it is written out here.
 
-1. **Re-test identification on a real shelf** with the spec-card framing. This is
-   the go/no-go: finding #1 is unresolved until a real photo yields a usable model
-   number. Everything below assumes it does.
-2. Retry `/api/prices` once when `grounded` comes back false, so an ungrounded
-   recollection can't reach the UI (finding #2).
-3. Decide the district filter's fate (finding #3) — recommend demoting it to an
-   online/in-store split plus a manually-set home district.
-4. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
-5. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
-6. `/api/advice` buying-advice route.
-7. Create the **public** GitHub repo (see the repo section above).
-8. Neon database + Vercel project, then verify the deployed commit SHA.
+1. ~~Re-test identification on a real photo~~ — **mostly done, see finding #1.**
+   Two real photos passed (product box; supermarket shelf label with a dual price).
+   The remedy is validated. What is still **untested** is the original failing case:
+   a *multi-product electronics shelf* shot with the new spec-card framing, and a
+   shelf label carrying both a model number *and* a price. Standing ask — grab one
+   next time you are in a shop.
+2. **Fix the `/api/prices` duration budget (finding #2) — do this before item 3,
+   it constrains it.** Drop `maxDuration` from 90 to 60 to match the Hobby cap, and
+   add an explicit ~50s timeout so a slow search returns a clean actionable error
+   instead of a raw socket exception surfacing as "Unexpected server error".
+3. Retry `/api/prices` once when `grounded` comes back false, so an ungrounded
+   recollection can't reach the UI (finding #3). **Must fit inside the ~50s budget
+   from item 2** — a naive second call does not.
+4. Gate the missing-model warning in `app/page.tsx` by category; it fires spuriously
+   on anything without a model number (see the defect note under finding #1).
+5. Decide the district filter's fate (finding #4) — online/in-store split plus a
+   manually-set home district, but keep district data where dealer listings supply it.
+6. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
+7. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
+8. `/api/advice` buying-advice route.
+9. Create the **public** GitHub repo (see the repo section above).
+10. Neon database + Vercel project, then verify the deployed commit SHA.
 
 The plan file referenced at the top predates the real-photo testing. Where it and
 this document disagree, **this document is newer** — in particular the plan still
