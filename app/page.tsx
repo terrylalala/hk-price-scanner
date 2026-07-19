@@ -84,6 +84,14 @@ interface SavedScan {
    * exact search returns nothing for a description with no model.
    */
   mode?: SearchMode;
+  /**
+   * The saved scan id per mode for this session, so "latest per mode" survives a
+   * reload. Without persisting it, a reload drops the in-memory ids and the next
+   * search stacks a fresh History row instead of replacing — which on the iOS
+   * home-screen app, where the OS reloads a suspended app freely, is the common
+   * case rather than the edge one.
+   */
+  savedIds?: Partial<Record<SearchMode, string>>;
 }
 
 /**
@@ -189,6 +197,9 @@ export default function Home() {
           // Prefer the mode the result was produced with; fall back to the
           // saved choice, then to exact.
           setMode(s.result?.mode ?? s.mode ?? "exact");
+          // Restore the per-mode saved ids so a re-search after this reload
+          // replaces the existing History row instead of stacking a new one.
+          savedScanIds.current = s.savedIds ?? {};
           setPhase(s.result ? "results" : "confirm");
         }
       }
@@ -207,7 +218,7 @@ export default function Home() {
         sessionStorage.removeItem(SCAN_KEY);
         return;
       }
-      save({ photos, identity, draft, result, cropped, mode });
+      save({ photos, identity, draft, result, cropped, mode, savedIds: savedScanIds.current });
     } catch {
       // Quota or private-mode failures are non-fatal; the app still works.
     }
@@ -430,7 +441,22 @@ export default function Home() {
         // Remember this row so the next search in the same mode replaces it
         // rather than stacking a duplicate.
         const data = (await res.json()) as { scan?: { id?: string } };
-        if (data.scan?.id) savedScanIds.current[savedMode] = data.scan.id;
+        if (data.scan?.id) {
+          savedScanIds.current[savedMode] = data.scan.id;
+          // Persist immediately. This id lands AFTER the normal persist effect
+          // ran (on setResult), and updating a ref does not trigger another, so
+          // without this write a reload before the next state change would lose
+          // the id and the next search would stack a duplicate row.
+          save({
+            photos,
+            identity,
+            draft,
+            result: priced,
+            cropped,
+            mode,
+            savedIds: savedScanIds.current,
+          });
+        }
       }
     } catch (err) {
       console.warn("[saveScan] failed", err);
