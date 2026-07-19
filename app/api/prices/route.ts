@@ -82,8 +82,8 @@ Emit the JSON block before the prose without exception. If you found no genuine 
  * The prompt for "find me something like this", used when there is no model
  * number to match — a scarf seen on a rail, a jacket on someone in the street.
  *
- * A separate prompt rather than a softened version of the one above, because
- * the two want opposite behaviour on the single most important rule. The exact
+ * A separate prompt rather than a softened version of the exact one, because the
+ * two want opposite behaviour on the single most important rule. The exact
  * prompt is built to STOP when the product is generic, since pricing a guessed
  * model produces a confident verdict about the wrong item. Here generic is the
  * starting condition and stopping would return nothing every time.
@@ -92,29 +92,60 @@ Emit the JSON block before the prose without exception. If you found no genuine 
  * Every result is openly a suggestion of something comparable you can buy, and
  * `note` carries what the listing actually is so nothing is passed off as the
  * thing photographed.
+ *
+ * Assembled from three parts so ONE thing varies — where it is allowed to shop —
+ * while everything that keeps it honest stays shared and cannot drift between
+ * the two scopes:
+ *
+ *   - SIMILAR_SCOPE_LOCAL  when the item had a PRICE TAG. A tag means the
+ *     shopper is standing in a Hong Kong shop comparing this exact purchase
+ *     against local alternatives, so an Amazon or ASOS price is the wrong
+ *     answer — they cannot walk out with it. Hong Kong retailers, HKD only.
+ *   - SIMILAR_SCOPE_GLOBAL when there was NO tag — a spotted item with no local
+ *     source — where international stores that ship here are exactly the point.
  */
-const SIMILAR_PROMPT = `You are a Hong Kong personal shopper. Given a DESCRIPTION of something the shopper saw and liked — often with no brand and no model number — find real items currently on sale IN HONG KONG that are close to it, so they can buy something similar.
+const SIMILAR_INTRO = `You are a personal shopper for someone in Hong Kong. Given a DESCRIPTION of something they saw and liked — often with no brand and no model number — find real items currently on sale that they can actually BUY, and that are close to what they described.`;
 
-Rules:
-- Hong Kong retailers and HK dollars only, including HK online stores that ship locally. If you can only find overseas listings, say so rather than converting prices.
-- Only report an item and price you actually saw in a search result. Never estimate a price or invent a listing. Three real options beat ten plausible ones.
+const SIMILAR_SCOPE_LOCAL = `Where to look — HONG KONG ONLY:
+- The shopper is looking at this item on sale in a Hong Kong shop, with a price on it, and wants to compare it against what they would pay ELSEWHERE IN HONG KONG. Search Hong Kong retailers and Hong Kong online stores only. Do NOT return overseas listings or ships-to-Hong-Kong imports — they are not what this shopper is choosing between.
+- Hong Kong dollars only. Report every price in HKD and set "currency" to "HKD". If you can only find an overseas price, say so in the prose rather than converting it and presenting it as a Hong Kong price.`;
+
+const SIMILAR_SCOPE_GLOBAL = `Where to look — anywhere the shopper can buy FROM Hong Kong:
+- Hong Kong physical shops and local online stores.
+- Hong Kong-based resellers, agents, concept stores and buying services that import and sell here — a lot of what people buy in Hong Kong is imported and sold this way.
+- Major international stores that ship to Hong Kong. Include these: they are where Hong Kong shoppers genuinely buy, especially for anything with no local stockist. Match the sites to the kind of item:
+  - Clothing, shoes, bags, accessories: ASOS, SHEIN, Farfetch, NET-A-PORTER, YOOX, ZALORA, Uniqlo, Lane Crawford, HBX, and comparable boutiques.
+  - Health, supplements, beauty: iHerb, Watsons, Mannings, Sephora, Amazon.
+  - Electronics and general goods: HKTVmall, Fortress, Broadway, Amazon (US / Japan / UK), AliExpress, price.com.hk.
+  - Food, grocery, snacks: HKTVmall, ParknShop, Ztore, Yamibuy, Amazon.
+  These are starting points, not a whitelist — any real store that ships to Hong Kong is fair game, and a well-known local boutique is often the best answer.
+- Prices may be in the store's own currency. Report the price EXACTLY as shown and put its ISO code in "currency" (HKD, USD, GBP, JPY, EUR, CNY, KRW…). Do NOT convert to HK dollars or guess an HKD equivalent — a made-up conversion is a made-up price. When the store is outside Hong Kong, say "ships to HK" in "note" (with any obvious caveat, e.g. shipping cost or duty) so the shopper knows it is an import. If a listing plainly does not ship to Hong Kong, leave it out.`;
+
+const SIMILAR_RULES = `Rules:
+- Only report an item and price you ACTUALLY SAW in a search result. Never estimate a price or invent a listing. Three real options beat ten plausible ones.
 - NEVER claim a result is the exact item the shopper photographed. You are suggesting comparable products. If you happen to identify the exact product, say so in "note" — do not assume it.
 - "note" is the most important field here: name what the listing ACTUALLY is (e.g. "Uniqlo pleated midi skirt, navy") and, briefly, how it compares to what was described. A result with a price but no note is useless.
 - "exactModel" must be false on every result unless you genuinely identified the same product. This is a similarity search; a wrong true would tell the shopper they found the item when they found something that merely resembles it.
-- Spread the options across price levels where you can — a high-street option and a premium one is more useful than five near-identical listings.
-- Include the seller's name as shoppers know it (e.g. "Uniqlo", "ZALORA", "HKTVmall", "Lane Crawford", "net-a-porter HK").
+- Spread the options across price levels where you can — a high-street piece and a premium one is more useful than five near-identical listings from one site.
+- Include the seller's name as shoppers know it (e.g. "Uniqlo", "iHerb", "Farfetch", "HKTVmall", "Lane Crawford").
 - "url" must be a page you ACTUALLY SAW in a search result — copy it, do not reconstruct it. If you did not see the product page, give the shop's home or category page instead. Never assemble a product URL from a remembered pattern or a guessed id: many shops route on the numeric id alone, so a guessed id silently serves a completely different product.
 - If the seller has a known Hong Kong district or the listing names one, put it in "district"; otherwise "".
 
 Structure your reply in this order, JSON FIRST:
 
 \`\`\`json
-{"quotes":[{"store":"...","price":1234,"currency":"HKD","url":"https://...","district":"","note":"what this listing actually is, and how it compares","exactModel":false}]}
+{"quotes":[{"store":"...","price":1234,"currency":"HKD","url":"https://...","district":"","note":"what this listing actually is and how it compares","exactModel":false}]}
 \`\`\`
 
 Then, after the JSON block, a short plain-language note for the shopper: what you searched for, and what would narrow it down (a brand, a fabric, a length) if the results are too broad.
 
 Emit the JSON block before the prose without exception. If you found nothing genuine, emit {"quotes":[]} first and then explain why.`;
+
+/** The full similar prompt for the given reach: global unless the item is tagged. */
+function similarPrompt(scope: "local" | "global"): string {
+  const where = scope === "local" ? SIMILAR_SCOPE_LOCAL : SIMILAR_SCOPE_GLOBAL;
+  return `${SIMILAR_INTRO}\n\n${where}\n\n${SIMILAR_RULES}`;
+}
 
 /** "exact" prices one known model; "similar" shops for comparable items. */
 export type SearchMode = "exact" | "similar";
@@ -126,6 +157,12 @@ interface Body {
   category?: string;
   tagPrice?: number | null;
   mode?: SearchMode;
+  /**
+   * A rich visual description from the vision step, used for a `similar` search
+   * where the bare name is too thin to match on. Ignored in exact mode, which
+   * searches on the model. See ProductIdentity.searchTerms.
+   */
+  searchTerms?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -164,21 +201,43 @@ export async function POST(req: NextRequest) {
 
   const mode: SearchMode = body.mode === "similar" ? "similar" : "exact";
 
+  // A visible price tag means the shopper is in a Hong Kong shop deciding
+  // whether to buy THIS one, so the comparison must stay local — an overseas
+  // listing is not something they can walk out with. It governs the similar
+  // search's reach below and is what makes a tagged similar search Hong
+  // Kong-only. (Exact mode is always local regardless.)
+  const hasTag = typeof body.tagPrice === "number" && body.tagPrice > 0;
+
   // Only meaningful when pricing a known model. In similar mode there is
   // nothing to judge the price against, and asking for a verdict would invite
   // one anyway.
   const askedPrice =
-    mode === "exact" && typeof body.tagPrice === "number" && body.tagPrice > 0
+    mode === "exact" && hasTag
       ? `\n\nThe shopper saw it in a shop at HK$${body.tagPrice}. Say whether that looks good, average or poor against what you found.`
       : "";
 
+  // A similar search matches on the vision step's rich description when it has
+  // one — "cream ribbed-knit oversized cardigan, horn buttons" finds real
+  // products where the bare name "cardigan" cannot. Falls back to the name for
+  // anything identified before searchTerms existed, or a saved scan re-run.
+  const searchTerms =
+    typeof body.searchTerms === "string" ? body.searchTerms.trim() : "";
+  const similarQuery = searchTerms || descriptor;
+
+  // Tagged → compare locally; untagged spotted item → let it shop internationally.
+  const similarScope: "local" | "global" = hasTag ? "local" : "global";
+
   const userText =
     mode === "similar"
-      ? `The shopper saw and liked: ${descriptor}${
+      ? `The shopper saw and liked: ${similarQuery}${
           typeof body.category === "string" && body.category.trim()
             ? ` (${body.category.trim()})`
             : ""
-        }\n\nFind similar items they can buy in Hong Kong now.`
+        }\n\n${
+          similarScope === "local"
+            ? "Find items on sale in Hong Kong now that are close to this, so they can compare against it locally."
+            : "Find items they can buy from Hong Kong now that are close to this — local stores, or international stores that ship here."
+        }`
       : `Find current Hong Kong retail prices for: ${descriptor}${askedPrice}`;
 
   try {
@@ -192,7 +251,8 @@ export async function POST(req: NextRequest) {
         },
       ],
       config: {
-        systemInstruction: mode === "similar" ? SIMILAR_PROMPT : SYSTEM_PROMPT,
+        systemInstruction:
+          mode === "similar" ? similarPrompt(similarScope) : SYSTEM_PROMPT,
         tools: [{ googleSearch: {} }],
         // Generous: thinking tokens draw from this budget too, and a truncated
         // reply loses the JSON block while still looking plausible in prose.

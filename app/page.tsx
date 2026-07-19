@@ -352,6 +352,9 @@ export default function Home() {
           category: identity?.category ?? "",
           tagPrice,
           mode,
+          // The vision step's rich visual description, used only by a similar
+          // search to match on more than a bare name. See ProductIdentity.
+          searchTerms: identity?.searchTerms ?? "",
         }),
       });
       const data = await res.json();
@@ -996,8 +999,10 @@ function Results({
       {similar && quotes.length > 0 && (
         <div className="warning">
           <strong>These are suggestions, not the item you photographed.</strong>{" "}
-          Nothing here has been matched to it — they are things on sale in Hong
-          Kong that resemble your description. Check each listing before buying.
+          Nothing here has been matched to it — they are{" "}
+          {hasTag
+            ? "things on sale in Hong Kong that resemble your description. Check each listing before buying."
+            : "things you can buy from Hong Kong, locally or shipped here, that resemble your description. Check each listing, and its shipping, before buying."}
         </div>
       )}
 
@@ -1041,7 +1046,9 @@ function Results({
           <div style={{ marginTop: 12 }}>
             <p className="note">
               {similar
-                ? "Nothing came back from Hong Kong retailers. This search is unreliable and sometimes returns nothing for a description it handled a moment earlier, so trying again is usually worth more than rewriting it."
+                ? `Nothing came back from ${
+                    hasTag ? "Hong Kong retailers" : "local or international stores"
+                  }. This search is unreliable and sometimes returns nothing for a description it handled a moment earlier, so trying again is usually worth more than rewriting it.`
                 : "No Hong Kong prices came back. This search is unreliable and sometimes returns nothing for a product it found a moment earlier, so trying again is usually worth more than editing the name."}
             </p>
             <button

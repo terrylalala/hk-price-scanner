@@ -50,6 +50,7 @@ const IDENTITY_SCHEMA = {
     modelExpected: { type: Type.BOOLEAN },
     confidence: { type: Type.NUMBER },
     assumptions: { type: Type.STRING },
+    searchTerms: { type: Type.STRING },
   },
   required: [
     "name",
@@ -65,6 +66,7 @@ const IDENTITY_SCHEMA = {
     "modelExpected",
     "confidence",
     "assumptions",
+    "searchTerms",
   ],
   propertyOrdering: [
     "name",
@@ -80,6 +82,7 @@ const IDENTITY_SCHEMA = {
     "modelExpected",
     "confidence",
     "assumptions",
+    "searchTerms",
   ],
 };
 
@@ -98,6 +101,7 @@ Return:
 - "modelExpected": true if products in this category normally carry a model or SKU number a shopper could look up — electronics, appliances, tools, computers. False for things identified by brand, name and size instead — food, drink, groceries, cosmetics, clothing, books. Answer for the CATEGORY, not for whether you happened to read one.
 - "confidence": 0 to 1, your overall confidence in the product identification.
 - "assumptions": one short sentence on what was unclear or assumed.
+- "searchTerms": a rich, search-ready description for finding this item — or ones like it — in online stores. Write it the way a shopper would type it, packing in what actually distinguishes the item: the kind of thing it is, its colour(s) and pattern, the material or fabric if you can judge it, the cut, shape or silhouette, and any standout feature (a print, a logo, a buckle, a heel shape, a collar style). Example: "women's cream ribbed-knit oversized cardigan, round horn buttons, drop shoulder". Fill this whenever the item has NO model number to look up — clothing, bags, shoes, accessories, homeware, food, cosmetics — because a plain name like "purple scarf" is too thin to match a real product against. Leave it "" when a brand and model already identify the item exactly (electronics, appliances), since the model number is the better query there.
 
 If the photo contains no identifiable product, set confidence to 0 and explain in "assumptions".`;
 
@@ -185,7 +189,10 @@ export async function POST(req: NextRequest) {
         // Disable "thinking": this is a structured extraction task, and thinking
         // tokens would otherwise eat the output budget and truncate the JSON.
         thinkingConfig: { thinkingBudget: 0 },
-        maxOutputTokens: 1024,
+        // Raised from 1024 for the searchTerms description, which is longer prose
+        // than the other fields — a truncated reply loses the closing brace and
+        // fails to parse, so leave headroom.
+        maxOutputTokens: 2048,
         temperature: 0.1,
       },
     });
@@ -274,6 +281,7 @@ function parseIdentity(text: string): ProductIdentity | null {
     modelExpected,
     confidence,
     assumptions: str(o.assumptions),
+    searchTerms: str(o.searchTerms),
   };
 }
 

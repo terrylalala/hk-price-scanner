@@ -58,6 +58,19 @@ export interface ProductIdentity {
   confidence: number;
   /** Short note on what was assumed or unreadable. */
   assumptions: string;
+  /**
+   * A rich, search-ready description for finding this item — or things like it —
+   * online, written the way a shopper would type it (kind of item, colour,
+   * pattern, material, cut, distinctive features). Populated for items with no
+   * model number to look up — a scarf on a rail, a jacket on a passer-by — and
+   * used as the query for a `similar` search, where a bare "purple scarf" is too
+   * thin to match on. "" for anything a brand and model already pin down exactly
+   * (electronics, appliances), since the model number is the better query there.
+   *
+   * Optional and NOT persisted: it matters only at search time, so a scan
+   * restored from the database reconstructs without it. See lib/scans.ts.
+   */
+  searchTerms?: string;
 }
 
 /** One price found by the grounded search. */
