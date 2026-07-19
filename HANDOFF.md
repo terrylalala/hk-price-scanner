@@ -47,14 +47,16 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 | ✅ Scan flow UI — capture → identify → confirm → search → results | `app/page.tsx`, verified end-to-end in browser |
 | ⬜ `/api/scans` CRUD, `/api/advice` | not started — **scans are not persisted; reload loses the result** |
 | ⬜ History / Watch / Settings tabs | not started |
-| ⬜ GitHub repo | **not created yet** — must be **PUBLIC**, see below |
+| ✅ GitHub repo | **public**, pushed: <https://github.com/terrylalala/hk-price-scanner> |
 | ⬜ Neon DB, Vercel project | not created yet |
 
-Local git history exists; nothing has been pushed anywhere.
+Pushed to <https://github.com/terrylalala/hk-price-scanner> (public, `main`).
+Verified on push: no secrets in history, `.env.local` absent from the remote,
+only `.env.local.example` tracked.
 
-**Create this repo PUBLIC, and commit with the user's real git identity.** The
-user initially chose private; that was reversed after it broke deployments on
-the sibling project, and the same trap is waiting here:
+**The repo IS public — keep it that way.** It was created public deliberately.
+The user initially chose private; that was reversed after it broke deployments on
+the sibling project, and the same trap would return if it is ever flipped back:
 
 - On Vercel's **Hobby** plan, a *private* repo only accepts deployments from
   commits authored by a recognised team member. The user's commits are authored
@@ -423,8 +425,20 @@ it is written out here.
 8. `/api/scans` CRUD + optional Blob photo, so scans survive a reload.
 9. History / Watch / Settings tabs; retab or delete the inherited `TabBar.tsx`.
 10. `/api/advice` buying-advice route.
-11. Create the **public** GitHub repo (see the repo section above).
-12. Neon database + Vercel project, then verify the deployed commit SHA.
+11. ~~Create the public GitHub repo~~ — **DONE.**
+    <https://github.com/terrylalala/hk-price-scanner>, public, 15 commits on `main`.
+    Note the first commit `6e9415b` is authored `noreply@localhost`, the address
+    Vercel rejects — harmless while deploying from `HEAD`, a problem only if you
+    ever deploy or roll back to that specific commit.
+12. Vercel project + Neon database, then verify the deployed commit SHA. Order:
+    import the repo to Vercel, then **Vercel → Storage → Neon → Connect Project**
+    (tick Development *and* Production), then `vercel env pull .env.local` so local
+    dev gets `DATABASE_URL` too — the integration sets it on Vercel only, and
+    without pulling it down task 8 stays untestable. `lib/db.ts` accepts either
+    `DATABASE_URL` or `POSTGRES_URL`, both of which the integration sets.
+    **Do not leave the deployment publicly reachable before the database is
+    connected:** `consume()` in `lib/rateLimit.ts` returns `allowed: true` when
+    `hasDb()` is false, so caps are inert and grounded search is billed per query.
     - **Give Price Scanner its own `GEMINI_API_KEY`, in its own Google Cloud
       project, at this step — not before and not after.** Deliberately deferred
       to here after weighing it: the benefit is attribution, which does not exist
