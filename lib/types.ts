@@ -143,8 +143,13 @@ export interface Scan {
   hasPhoto: boolean;
   /** How many photos this scan has; fetch each via /api/photo/[id]?i=N. */
   photoCount: number;
-  /** Whether the user is tracking this product on the Watch tab. */
+  /** Whether the user is tracking this product on the Wishlist tab. */
   watching: boolean;
+  /**
+   * Which search produced this scan. 'similar' results are deliberately NOT the
+   * photographed item, so they must never be rendered as failed exact matches.
+   */
+  mode: "exact" | "similar";
 }
 
 /** Per-user settings, stored as one jsonb blob (see /api/settings). */

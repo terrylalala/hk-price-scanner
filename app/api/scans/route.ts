@@ -81,6 +81,8 @@ interface CreateBody {
   photoBase64?: string;
   /** All photos for this scan. Takes precedence over photoBase64. */
   photosBase64?: string[];
+  /** Which search produced this scan; see lib/db.ts. Defaults to 'exact'. */
+  mode?: "exact" | "similar";
   /**
    * Small versions of `photosBase64`, positionally matched. Optional: a client
    * that omits them still saves its photos, and /api/photo falls back to the
@@ -226,7 +228,7 @@ export async function POST(req: NextRequest) {
         tag_price, currency, store_name, district,
         confidence, assumptions,
         best_price, best_source, quotes, citations, notes,
-        search_suggestions_html, photo_url, photo_urls, thumb_urls
+        search_suggestions_html, photo_url, photo_urls, thumb_urls, mode
       ) values (
         ${id}, ${uid}, ${now.toISOString()}, ${hongKongDay(now)},
         ${name}, ${str(p.brand)}, ${str(p.model)}, ${str(p.category)},
@@ -237,7 +239,8 @@ export async function POST(req: NextRequest) {
         ${str(body.notes) || null},
         ${str(body.searchSuggestionsHtml) || null}, ${photoUrl},
         ${photoUrls.length ? JSON.stringify(photoUrls) : null},
-        ${thumbUrls.length ? JSON.stringify(thumbUrls) : null}
+        ${thumbUrls.length ? JSON.stringify(thumbUrls) : null},
+        ${body.mode === "similar" ? "similar" : "exact"}
       )
       returning *
     `) as unknown as ScanRow[];

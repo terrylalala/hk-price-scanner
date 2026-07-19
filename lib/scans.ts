@@ -34,6 +34,7 @@ export interface ScanRow {
   citations: Citation[] | null;
   notes: string | null;
   watching: boolean;
+  mode: string | null;
   search_suggestions_html: string | null;
   /** Server-side only. Mapped to `hasPhoto`; the URL never reaches the client. */
   photo_url: string | null;
@@ -90,6 +91,7 @@ export function rowToScan(row: ScanRow): Scan {
         ? 1
         : 0,
     watching: row.watching,
+    mode: row.mode === "similar" ? "similar" : "exact",
   };
 }
 

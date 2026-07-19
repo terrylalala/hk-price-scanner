@@ -6,7 +6,7 @@ import ScanDetail from "./ScanDetail";
 import { districtById } from "@/lib/hkDistricts";
 
 /**
- * The saved-scan list, used for both the History and Watch tabs.
+ * The saved-scan list, used for both the History and Wishlist tabs.
  *
  * One component with a `watchingOnly` flag rather than two: Watch differs only
  * by a query filter. There is no re-check mechanism yet — `price_points` exists
@@ -116,7 +116,7 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
         <div className="card center">
           <p className="note">
             {watchingOnly
-              ? "Nothing tracked yet. Tap ☆ on a scan in History to follow its price."
+              ? "Nothing saved yet. Tap ☆ on a scan in History to keep it here."
               : "No saved scans yet. Scans are kept automatically once a price search finishes."}
           </p>
         </div>
@@ -168,12 +168,18 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
               )}
             </div>
 
+            {/* A similarity search has no exact-model quote by design, so the
+                "none found" line would report success as failure. */}
             <p className="note" style={{ marginTop: 8 }}>
-              {scan.bestPrice !== null
-                ? `Best found: HK$${Math.round(scan.bestPrice)}${
-                    scan.bestSource ? ` at ${scan.bestSource}` : ""
-                  }`
-                : "No exact-model price was found for this scan."}
+              {scan.mode === "similar"
+                ? `${scan.quotes.length} similar ${
+                    scan.quotes.length === 1 ? "option" : "options"
+                  } saved`
+                : scan.bestPrice !== null
+                  ? `Best found: HK$${Math.round(scan.bestPrice)}${
+                      scan.bestSource ? ` at ${scan.bestSource}` : ""
+                    }`
+                  : "No exact-model price was found for this scan."}
             </p>
 
             {scan.notes && (
@@ -188,7 +194,7 @@ export default function ScanList({ watchingOnly = false }: { watchingOnly?: bool
                 disabled={busyId === scan.id}
                 onClick={() => toggleWatch(scan)}
               >
-                {scan.watching ? "★ Tracking" : "☆ Track"}
+                {scan.watching ? "★ Saved" : "☆ Save"}
               </button>
               <button
                 className="btn quiet small"

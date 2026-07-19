@@ -144,7 +144,16 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
 
       {canShowPrices ? (
         <div className="card">
-          <h3>Prices at the time of the scan</h3>
+          <h3>
+            {scan.mode === "similar"
+              ? "Similar items found at the time"
+              : "Prices at the time of the scan"}
+          </h3>
+          {scan.mode === "similar" && (
+            <p className="note" style={{ marginTop: 4 }}>
+              Suggestions that resembled the photo — not matched to it.
+            </p>
+          )}
           <div style={{ marginTop: 10 }}>
             {quotes.map((q, i) => (
               <div
@@ -164,7 +173,9 @@ export default function ScanDetail({ scan, onBack }: { scan: Scan; onBack: () =>
                   ) : (
                     <span className="quote-store">{q.store}</span>
                   )}
-                  {!q.exactModel && <span className="tag-different">different model</span>}
+                  {!q.exactModel && scan.mode !== "similar" && (
+                    <span className="tag-different">different model</span>
+                  )}
                   {(q.district || q.note) && (
                     <div className="quote-meta">
                       {[q.district, q.note].filter(Boolean).join(" · ")}

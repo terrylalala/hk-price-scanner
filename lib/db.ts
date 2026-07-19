@@ -128,6 +128,22 @@ async function initSchema(): Promise<void> {
     alter table scans add column if not exists thumb_urls jsonb
   `;
 
+  /**
+   * Which search produced this scan: 'exact' (price one known model) or
+   * 'similar' (shop for comparable items, for things with no label).
+   *
+   * Stored because the two render differently and cannot be told apart from the
+   * rows alone: a similarity search legitimately has no exact-model quote and
+   * no best price, which is indistinguishable from an exact search that failed.
+   * Without this, every saved wishlist item would read as "no exact-model price
+   * was found" — a failure message for something that worked.
+   *
+   * Defaults to 'exact' so rows written before this existed keep their meaning.
+   */
+  await sql`
+    alter table scans add column if not exists mode text not null default 'exact'
+  `;
+
   await sql`create index if not exists scans_user_ts_idx on scans (user_id, ts desc)`;
   await sql`create index if not exists scans_day_idx on scans (user_id, day)`;
   await sql`create index if not exists scans_watch_idx on scans (user_id, watching)`;

@@ -25,12 +25,16 @@ import { Citation, PriceQuote, ProductIdentity } from "@/lib/types";
 
 type Phase = "idle" | "identifying" | "confirm" | "searching" | "results";
 
+/** "exact" prices one known model; "similar" shops for comparable items. */
+type SearchMode = "exact" | "similar";
+
 interface PriceResult {
   quotes: PriceQuote[];
   citations: Citation[];
   searchSuggestionsHtml: string;
   summary: string;
   grounded: boolean;
+  mode?: SearchMode;
 }
 
 /** Editable subset of the identification — what the price search actually uses. */
@@ -73,6 +77,13 @@ interface SavedScan {
    * the kind of thing that pushes this over the sessionStorage quota.
    */
   cropped?: boolean;
+  /**
+   * The chosen search mode. Persisted because it is derived from the
+   * identification response, which a restored session no longer has — without
+   * it a reload silently reverts a similarity search to an exact one, and the
+   * exact search returns nothing for a description with no model.
+   */
+  mode?: SearchMode;
 }
 
 /**
@@ -125,6 +136,14 @@ export default function Home() {
    * product, which is the thing people actually want on a shelf of fifty.
    */
   const [cropped, setCropped] = useState(false);
+  /**
+   * Whether to price one known model or shop for something comparable.
+   *
+   * Chosen for you after identification, then overridable — the right answer is
+   * usually obvious from whether a model number exists, but not always, and
+   * guessing wrong sends the search after the wrong thing entirely.
+   */
+  const [mode, setMode] = useState<SearchMode>("exact");
   const [identity, setIdentity] = useState<ProductIdentity | null>(null);
   const [draft, setDraft] = useState<Draft>({
     name: "",
@@ -157,6 +176,9 @@ export default function Home() {
           setIdentity(s.identity);
           setDraft(s.draft);
           setResult(s.result ?? null);
+          // Prefer the mode the result was produced with; fall back to the
+          // saved choice, then to exact.
+          setMode(s.result?.mode ?? s.mode ?? "exact");
           setPhase(s.result ? "results" : "confirm");
         }
       }
@@ -175,11 +197,11 @@ export default function Home() {
         sessionStorage.removeItem(SCAN_KEY);
         return;
       }
-      save({ photos, identity, draft, result, cropped });
+      save({ photos, identity, draft, result, cropped, mode });
     } catch {
       // Quota or private-mode failures are non-fatal; the app still works.
     }
-  }, [restored, phase, photos, identity, draft, result, cropped]);
+  }, [restored, phase, photos, identity, draft, result, cropped, mode]);
 
   // The scan stays on one screen and results append below it, so after a search
   // the interesting part is off-screen. Bring it into view rather than leaving
@@ -273,6 +295,21 @@ export default function Home() {
 
       const product = data.product as ProductIdentity;
       setIdentity(product);
+
+      /*
+        Pick the search mode from what was actually found, not from what the
+        user was doing. A model number means there is one specific thing to
+        price; without one — a scarf on a rail, a jacket on a passer-by —
+        pricing "the exact model" has nothing to match, and /api/prices is
+        built to return NOTHING rather than guess. That correct refusal reads
+        as a broken app unless the mode moves with it.
+
+        `modelExpected` is the model's own judgement about whether this KIND of
+        product carries a model number, which is why it is checked as well as
+        whether one was read: a scarf with no number is descriptive, a laptop
+        whose number was merely missed is still an exact search.
+      */
+      setMode(product.model?.trim() || product.modelExpected ? "exact" : "similar");
       // /api/identify derives this from locationHint; the client would otherwise
       // drop it, and the scan would be saved without a district it already knew.
       setDistrict(typeof data.district === "string" ? data.district : "");
@@ -302,7 +339,9 @@ export default function Home() {
           name: draft.name,
           brand: draft.brand,
           model: draft.model,
+          category: identity?.category ?? "",
           tagPrice,
+          mode,
         }),
       });
       const data = await res.json();
@@ -351,6 +390,9 @@ export default function Home() {
           // Required to redisplay this scan's prices later without breaching
           // the Search Suggestions term. See lib/db.ts.
           searchSuggestionsHtml: priced.searchSuggestionsHtml,
+          // Without this a saved similarity search is indistinguishable from a
+          // failed exact one — same empty best price, same lack of exact quotes.
+          mode: priced.mode ?? mode,
           // Already downscaled to 1600px by CameraCapture. Optional: the route
           // saves the scan regardless if the upload fails.
           photosBase64: photos.map((p) => p.base64),
@@ -397,7 +439,7 @@ export default function Home() {
   const TITLES: Record<Tab, { h1: string; sub: string }> = {
     scan: { h1: "Price Scanner", sub: "Is that Hong Kong shop price any good?" },
     history: { h1: "History", sub: "Every scan you have saved" },
-    watch: { h1: "Watch", sub: "Products you are tracking" },
+    watch: { h1: "Wishlist", sub: "Things you saved to buy or price later" },
     settings: { h1: "Settings", sub: "" },
   };
 
@@ -457,6 +499,8 @@ export default function Home() {
             onAddPhoto={addPhoto}
             onZoom={() => setCropping(true)}
             cropped={cropped}
+            mode={mode}
+            onModeChange={setMode}
             identity={identity}
             draft={draft}
             onChange={setDraft}
@@ -570,6 +614,8 @@ function ConfirmStep({
   onAddPhoto,
   onZoom,
   cropped,
+  mode,
+  onModeChange,
   identity,
   draft,
   onChange,
@@ -581,6 +627,8 @@ function ConfirmStep({
   onAddPhoto: (img: CapturedImage) => void;
   onZoom: () => void;
   cropped: boolean;
+  mode: SearchMode;
+  onModeChange: (m: SearchMode) => void;
   identity: ProductIdentity;
   draft: Draft;
   onChange: (d: Draft) => void;
@@ -767,12 +815,40 @@ function ConfirmStep({
           </p>
         )}
 
+        {/*
+          Which search to run. Preselected from whether a model number exists,
+          but shown rather than decided silently: the two searches look for
+          genuinely different things, and the exact one deliberately returns
+          NOTHING for a description it cannot pin to a model — correct, but
+          indistinguishable from a broken app if you never meant it.
+        */}
+        <div className="mode-choice">
+          <button
+            type="button"
+            className={`mode-option ${mode === "exact" ? "on" : ""}`}
+            onClick={() => onModeChange("exact")}
+            disabled={busy}
+          >
+            <strong>Price this exact item</strong>
+            <span>Needs a brand or model number</span>
+          </button>
+          <button
+            type="button"
+            className={`mode-option ${mode === "similar" ? "on" : ""}`}
+            onClick={() => onModeChange("similar")}
+            disabled={busy}
+          >
+            <strong>Find similar to buy</strong>
+            <span>For things with no label or tag</span>
+          </button>
+        </div>
+
         <div className="btn-row">
           <button className="btn quiet" onClick={onCancel} disabled={busy}>
             Start over
           </button>
           <button className="btn" onClick={onSubmit} disabled={busy || !draft.name.trim()}>
-            Find prices
+            {mode === "similar" ? "Find similar" : "Find prices"}
           </button>
         </div>
       </div>
@@ -827,6 +903,13 @@ function Results({
 }) {
   const { quotes, citations, searchSuggestionsHtml, summary, grounded } = result;
   const hasTag = Number.isFinite(tagPrice) && tagPrice > 0;
+  /**
+   * A similarity search has no "right answer" to measure against, so several
+   * things below must not fire: there is no verdict, "different model" is the
+   * expected state rather than a warning, and an empty result means the
+   * description was too vague, not that a model number is missing.
+   */
+  const similar = result.mode === "similar";
 
   /*
     Only quotes for the SAME model may be judged against.
@@ -865,12 +948,25 @@ function Results({
         </div>
       )}
 
-      {substitutedOnly && (
+      {/* Not shown for a similarity search: everything there is deliberately a
+          different product, so this would warn about working as intended. */}
+      {substitutedOnly && !similar && (
         <div className="warning">
           <strong>No prices found for this exact model.</strong> Everything below
-          is a similar but different product, so there is no verdict — comparing
-          your shop price against them would be misleading. Check the model
-          number on the label, or use these only as a rough guide.
+          is a similar but different product, so there is no verdict —{" "}
+          {hasTag
+            ? "comparing your shop price against them would be misleading"
+            : "they are not the same item"}
+          . Check the model number on the label, or use these only as a rough
+          guide.
+        </div>
+      )}
+
+      {similar && quotes.length > 0 && (
+        <div className="warning">
+          <strong>These are suggestions, not the item you photographed.</strong>{" "}
+          Nothing here has been matched to it — they are things on sale in Hong
+          Kong that resemble your description. Check each listing before buying.
         </div>
       )}
 
@@ -884,7 +980,15 @@ function Results({
       )}
 
       <div className="card">
-        <h2>{quotes.length > 0 ? "Prices found" : "No prices found"}</h2>
+        <h2>
+          {similar
+            ? quotes.length > 0
+              ? "Similar items you can buy"
+              : "Nothing similar found"
+            : quotes.length > 0
+              ? "Prices found"
+              : "No prices found"}
+        </h2>
         <p className="note" style={{ marginTop: 4 }}>
           {productName}
         </p>
@@ -950,8 +1054,15 @@ function Results({
                   )}
                   {/* A substitution has to be visible at a glance. Left in the
                       grey meta line it read as a footnote, and the app judged
-                      the shopper's price against it regardless. */}
-                  {!q.exactModel && <span className="tag-different">different model</span>}
+                      the shopper's price against it regardless.
+
+                      Suppressed in similarity mode, where every result is a
+                      different product by definition — tagging them all would
+                      make the label meaningless exactly where it matters most
+                      elsewhere. */}
+                  {!q.exactModel && !similar && (
+                    <span className="tag-different">different model</span>
+                  )}
                   {(q.district || q.note) && (
                     <div className="quote-meta">
                       {[q.district, q.note].filter(Boolean).join(" · ")}
