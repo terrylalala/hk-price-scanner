@@ -5,6 +5,7 @@ import CameraCapture, { CapturedImage } from "@/components/CameraCapture";
 import TabBar, { Tab } from "@/components/TabBar";
 import ScanList from "@/components/ScanList";
 import SettingsTab from "@/components/SettingsTab";
+import BuyingAdvice from "@/components/BuyingAdvice";
 import { markdownToHtml } from "@/lib/markdown";
 import { Citation, PriceQuote, ProductIdentity } from "@/lib/types";
 
@@ -420,6 +421,8 @@ export default function Home() {
                 <Results
                   result={result}
                   productName={draft.name}
+                  brand={draft.brand}
+                  model={draft.model}
                   tagPrice={parseFloat(draft.tagPrice)}
                   onAgain={reset}
                   onRetry={findPrices}
@@ -611,12 +614,16 @@ function verdictFor(tagPrice: number, cheapest: number) {
 function Results({
   result,
   productName,
+  brand,
+  model,
   tagPrice,
   onAgain,
   onRetry,
 }: {
   result: PriceResult;
   productName: string;
+  brand: string;
+  model: string;
   tagPrice: number;
   onAgain: () => void;
   /** Re-run the same search. User-initiated on purpose — see the empty branch. */
@@ -775,6 +782,14 @@ function Results({
           />
         </div>
       )}
+
+      <BuyingAdvice
+        name={productName}
+        brand={brand}
+        model={model}
+        tagPrice={hasTag ? tagPrice : null}
+        quotes={quotes}
+      />
 
       {citations.length > 0 && (
         <div className="card">

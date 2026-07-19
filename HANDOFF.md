@@ -46,7 +46,7 @@ behaviour, not harvesting. Do not "improve" this by adding a scraper.
 | ⚠️ `/api/prices` — grounded search | works, but **unreliable in five distinct ways — see finding #6** |
 | ✅ Scan flow UI — capture → identify → confirm → search → results | `app/page.tsx`, verified end-to-end in browser |
 | ✅ `/api/scans` CRUD | list/create/get/patch/delete, tested against Neon |
-| ⬜ `/api/advice` | not started |
+| ✅ `/api/advice` | buying advice, on demand, ungrounded |
 | ✅ History / Watch / Settings tabs | `TabBar` retabbed and wired; scans list, track, delete, home district |
 | ✅ GitHub repo | **public**, pushed: <https://github.com/terrylalala/hk-price-scanner> |
 | ✅ Neon DB + Vercel project | **deployed & verified** — <https://hk-price-scanner.vercel.app> |
@@ -493,7 +493,31 @@ it is written out here.
    Known rough edge: toggling Track takes ~4s (a PATCH then a reload, each a
    round trip to Neon in Singapore) and the button only greys out meanwhile.
    An optimistic update would fix it.
-10. `/api/advice` buying-advice route.
+10. ~~`/api/advice` buying-advice route~~ — **DONE.** On-demand from the results
+    view via `components/BuyingAdvice.tsx`.
+
+    - **Deliberately NOT grounded.** The prices arrive in the request. Searching
+      again would double the cost of a scan, spend a second billed search, and
+      inherit all five failure modes in finding #6 for information the caller
+      already has. This route reasons; it does not research.
+    - **It must not restate the price comparison** — `/api/prices` already
+      returns that summary. What a price table cannot express is what actually
+      decides a HK electronics purchase: 水貨 versus 行貨, whose warranty is
+      honoured, what to check before paying. Those signals were sitting unread in
+      the quote `note` fields.
+    - **On demand, not automatic.** It is billed and capped at 20/day, and most
+      scans do not need it.
+    - Refuses with 422 when no exact-model quote exists; the button is hidden in
+      that case rather than offered and failing.
+
+    Two things worth keeping: `maxOutputTokens` is **4096** because thinking
+    tokens draw from the same budget — at 1024 the advice truncated mid-sentence
+    ("Parallel imports (水貨) are"), the exact trap recorded for `/api/identify`.
+    A `finishReason` warning now logs it. And the prompt raises parallel imports
+    on **relevance, not on a listing mentioning it**: an early draft gated on the
+    latter, and the model correctly overrode it to warn that Xiaomi smart devices
+    have HK/Mainland versions that will not pair in the Mi Home app. Verified it
+    still stays silent where it would be padding (a bottle of wine).
 11. ~~Create the public GitHub repo~~ — **DONE.**
     <https://github.com/terrylalala/hk-price-scanner>, public, 15 commits on `main`.
     Note the first commit `6e9415b` is authored `noreply@localhost`, the address
