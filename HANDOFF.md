@@ -352,6 +352,49 @@ far below what a phone produces, so it is probably a resolution artefact rather
 than a model failure, but it shows price reading degrades silently, not loudly.
 Worth re-testing at full resolution before drawing conclusions.
 
+**10. Eleven real HK shop photos, no detected failures — but read the caveat.**
+A deliberately varied batch (printed tags, orange promo stickers, glass display
+cases, and **handwritten** tags, which remain common in Hong Kong):
+
+```
+3509  Casio DQ-747 Thermometer Clock   $86    HANDWRITTEN tag
+3511  Panasonic ES3833 Shaver          $248
+3517  Dove Go Fresh Body Wash          $35    no warning (toiletry) ✓
+3522  WholeLove MED NeuroCure 60s      $219   no warning (supplement) ✓
+3523  Mizuno Wave Rider 27             $840
+3524  Salomon Pulsar Trail             $960
+3525  TP-Link 5G Router M8550          $2298
+3526  UGREEN Nexode 55910B             $249
+3528  Unitek USB-C→DisplayPort cable   $179   WARNED (no model read) ✓
+3532  Seiko QHE204S                    $135
+3534  Oral-B PRO 1 1000                $369
+```
+
+**Handwriting is not a problem.** `CASIO DQ-747-8DF` was read correctly off a
+handwritten tag, including the Chinese spec lines around it. That question is
+settled; do not treat handwritten tags as a known risk.
+
+The `modelExpected` gate held on categories nobody listed — toiletries and
+supplements silent, the cable warned — which is the payoff for asking the model
+instead of maintaining a keyword list (finding #8).
+
+**CAVEAT, and it matters: only 2 of the 11 were actually verified against the
+photos.** The other nine were accepted from their own `assumptions` text. After
+finding #9 — a confident, specific, entirely invented "D45" — an unverified pass
+is weak evidence. Treat this batch as "nothing checked was wrong", not "all
+correct".
+
+Of the two checked: IMG_3532 correctly paired **$135** with the green Seiko among
+six clocks tagged $130/$135/$145/$168/$168/$145 — genuine disambiguation. But
+IMG_3509's **$86** could NOT be confirmed: glare obscures the digits at full zoom.
+
+**New gap this batch exposed, unfixed:** `modelVerbatim` proves a SKU was READ off
+a label — not that the label belongs to the product the PRICE came from. On
+IMG_3532 a background box carries a barcode reading `QHE2045` while the priced
+item is a foreground green clock, so `QHE204S` may have come from a different box.
+Same class as finding #9 (price and identity drawn from different labels), one
+level subtler, and the current fix does not catch it.
+
 ## Gotchas already paid for (do not rediscover)
 
 - **In a HK electronics shop, the model number is not on the product — it is on
