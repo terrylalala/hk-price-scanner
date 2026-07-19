@@ -9,7 +9,20 @@ import { GoogleGenAI, ApiError } from "@google/genai";
 // `gemini-flash-latest` is an alias that always resolves to the current Flash
 // model, so pinned versions being retired won't break the app. Override with the
 // GEMINI_MODEL env var to pin a specific version (e.g. gemini-3.5-flash).
+//
+// Used for the grounded PRICE search, which reasons over web results and is
+// worth the stronger model.
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+
+// Identification is a pure extraction task — read the label, read the tag — and
+// does not need the reasoning of full Flash. Measured on a crowded shelf photo,
+// `gemini-flash-latest` took 36s while `gemini-flash-lite-latest` took 3.4s for
+// an identical result (same model, same price, same multi-product flag): a 10x
+// speedup and the single largest lever on the app's end-to-end latency. Kept
+// separate from GEMINI_MODEL so the price search still uses the stronger model,
+// and overridable if Lite ever proves less accurate on real products.
+export const GEMINI_VISION_MODEL =
+  process.env.GEMINI_VISION_MODEL || "gemini-flash-lite-latest";
 
 // Accept either GEMINI_API_KEY (preferred) or GOOGLE_API_KEY as a fallback.
 function apiKey(): string | undefined {

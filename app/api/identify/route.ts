@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Type } from "@google/genai";
-import { GEMINI_MODEL, MissingApiKeyError, getGemini } from "@/lib/gemini";
+import { GEMINI_VISION_MODEL, MissingApiKeyError, getGemini } from "@/lib/gemini";
 import { ownerId, requireUser } from "@/lib/session";
 import { consume, rateLimited } from "@/lib/rateLimit";
 import { districtFromText } from "@/lib/hkDistricts";
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
   try {
     const ai = getGemini();
     const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
+      model: GEMINI_VISION_MODEL,
       contents: [
         {
           role: "user",
