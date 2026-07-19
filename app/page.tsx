@@ -437,7 +437,7 @@ export default function Home() {
   }
 
   const TITLES: Record<Tab, { h1: string; sub: string }> = {
-    scan: { h1: "Price Scanner", sub: "Is that Hong Kong shop price any good?" },
+    scan: { h1: "Flâneur", sub: "Is that Hong Kong shop price any good?" },
     history: { h1: "History", sub: "Every scan you have saved" },
     watch: { h1: "Wishlist", sub: "Things you saved to buy or price later" },
     treasures: {

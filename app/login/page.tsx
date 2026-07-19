@@ -48,7 +48,7 @@ function LoginForm() {
   return (
     <main className="shell">
       <header className="masthead">
-        <h1>Price Scanner</h1>
+        <h1>Flâneur</h1>
         <p>Enter the shared password to continue</p>
       </header>
 

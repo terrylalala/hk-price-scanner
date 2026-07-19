@@ -2,15 +2,15 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Price Scanner",
-  description: "Photograph a product and find out whether the price is any good.",
+  title: "Flâneur",
+  description: "Photograph something in Hong Kong — find what it costs, or find where to buy one like it.",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#f7f3ec",
+  themeColor: "#ece8dd",
 };
 
 export default function RootLayout({
