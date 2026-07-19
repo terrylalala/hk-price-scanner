@@ -456,7 +456,6 @@ export default function Home() {
             photos={photos}
             onAddPhoto={addPhoto}
             onZoom={() => setCropping(true)}
-            onUndoCrop={undoCrop}
             cropped={cropped}
             identity={identity}
             draft={draft}
@@ -475,6 +474,17 @@ export default function Home() {
             image={cropSource}
             onCancel={() => setCropping(false)}
             onCrop={useCrop}
+            // Only offered when there is a crop to discard. Lives here rather
+            // than on the confirm screen because this is where you are already
+            // looking at the whole photo you would be going back to.
+            onUseWhole={
+              cropped
+                ? () => {
+                    setCropping(false);
+                    void undoCrop();
+                  }
+                : undefined
+            }
           />
         )}
 
@@ -559,7 +569,6 @@ function ConfirmStep({
   photos,
   onAddPhoto,
   onZoom,
-  onUndoCrop,
   cropped,
   identity,
   draft,
@@ -571,7 +580,6 @@ function ConfirmStep({
   photos: CapturedImage[];
   onAddPhoto: (img: CapturedImage) => void;
   onZoom: () => void;
-  onUndoCrop: () => void;
   cropped: boolean;
   identity: ProductIdentity;
   draft: Draft;
@@ -624,32 +632,25 @@ function ConfirmStep({
       */}
       {photos.length > 0 && (
         <div className="card center">
+          {/*
+            ONE button, not two. "Pick a different product" and "Undo crop" read
+            as the same intent — change what I selected — and splitting them put
+            three competing actions on this screen.
+
+            Discarding the crop entirely still exists, but inside the cropper:
+            it is rare, and it is rarely what you want. Undoing on a crowded
+            shelf hands back the whole-photo answer, which is wrong by
+            construction — that is the failure this feature exists to fix.
+          */}
           <button className="btn block alt" onClick={onZoom} disabled={busy}>
             {cropped
-              ? "Pick a different product"
+              ? "Undo crop — pick a different product"
               : "Wrong product? Draw a box around the one you mean"}
           </button>
 
-          {/*
-            Once a crop exists there are two ways to change your mind, and they
-            are genuinely different: redraw on the same shelf photo, or discard
-            the crop entirely and go back to reading the whole thing. Offering
-            only the first would strand anyone who cropped by mistake.
-          */}
-          {cropped && (
-            <button
-              className="btn quiet small"
-              style={{ marginTop: 10 }}
-              onClick={onUndoCrop}
-              disabled={busy}
-            >
-              Undo crop — use the whole photo
-            </button>
-          )}
-
           <p className="note" style={{ marginTop: 8 }}>
             {cropped
-              ? "Draws on the original shelf photo again, not on this crop."
+              ? "Opens the original shelf photo again, not this crop."
               : "Best for shelf photos with several products and price tags."}
           </p>
         </div>

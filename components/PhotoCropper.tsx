@@ -43,10 +43,20 @@ export default function PhotoCropper({
   image,
   onCancel,
   onCrop,
+  onUseWhole,
 }: {
   image: CapturedImage;
   onCancel: () => void;
   onCrop: (cropped: CapturedImage) => void;
+  /**
+   * Discard the existing crop and read the whole photo instead. Absent when
+   * there is no crop to discard.
+   *
+   * Deliberately quiet and last: on a crowded shelf this returns the answer the
+   * crop was drawn to escape. It exists for the case where the photo never
+   * needed cropping — a single product, close up — not as a peer of "Use this".
+   */
+  onUseWhole?: () => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -266,6 +276,16 @@ export default function PhotoCropper({
             Working from the saved copy, so small boxes will be soft. Retaking
             the photo gives a sharper crop.
           </p>
+        )}
+        {onUseWhole && (
+          <button
+            className="btn quiet small"
+            style={{ marginTop: 10 }}
+            onClick={onUseWhole}
+            disabled={busy}
+          >
+            Read the whole photo instead
+          </button>
         )}
       </div>
     </div>

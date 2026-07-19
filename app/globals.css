@@ -407,6 +407,8 @@ a {
 
 .cropper-foot {
   padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  /* Centres the inline-block escape-hatch button along with the notes above it. */
+  text-align: center;
 }
 
 .cropper-foot .note {
