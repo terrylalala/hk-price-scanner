@@ -45,7 +45,13 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next's own assets and the favicon. Static files carry no
-  // scan data, and excluding them keeps the gate off the hot path.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Everything except Next's own assets and the app's branding files. Static
+  // files carry no scan data, and excluding them keeps the gate off the hot
+  // path. The icons and manifest MUST be here: iOS fetches the apple-touch-icon
+  // unauthenticated when adding to the Home Screen, and if the gate redirects
+  // that request to /login it gets HTML instead of a PNG and shows a blank
+  // fallback icon. Same for the PWA manifest.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|apple-icon.png|icon.png|icon-192.png|icon-512.png|manifest.webmanifest).*)",
+  ],
 };
