@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Type } from "@google/genai";
-import { GEMINI_VISION_MODEL, MissingApiKeyError, getGemini } from "@/lib/gemini";
+import {
+  GEMINI_VISION_MODEL,
+  MissingApiKeyError,
+  getGemini,
+  warnIfSlow,
+} from "@/lib/gemini";
 import { ownerId, requireUser } from "@/lib/session";
 import { consume, rateLimited } from "@/lib/rateLimit";
 import { districtFromText } from "@/lib/hkDistricts";
@@ -28,11 +33,7 @@ export const maxDuration = 60;
  */
 const IDENTIFY_TIMEOUT_MS = 30_000;
 
-const ALLOWED_MEDIA_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-] as const;
+const ALLOWED_MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 type AllowedMediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 
@@ -165,13 +166,17 @@ export async function POST(req: NextRequest) {
     const mt = img?.mediaType;
     if (!b64 || typeof b64 !== "string") {
       return NextResponse.json(
-        { error: "Missing 'imageBase64' (base64 image data, no data: prefix)." },
+        {
+          error: "Missing 'imageBase64' (base64 image data, no data: prefix).",
+        },
         { status: 400 },
       );
     }
     if (!mt || !ALLOWED_MEDIA_TYPES.includes(mt as AllowedMediaType)) {
       return NextResponse.json(
-        { error: `Unsupported media type. Use one of: ${ALLOWED_MEDIA_TYPES.join(", ")}.` },
+        {
+          error: `Unsupported media type. Use one of: ${ALLOWED_MEDIA_TYPES.join(", ")}.`,
+        },
         { status: 400 },
       );
     }
@@ -188,42 +193,51 @@ export async function POST(req: NextRequest) {
 
   try {
     const ai = getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_VISION_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            ...parts,
-            {
-              text:
-                parts.length > 1
-                  ? `These ${parts.length} photos are DIFFERENT VIEWS OF THE SAME single product — typically the product itself, its printed spec or price card, and possibly shop signage. Combine them: read the model number from whichever photo shows it legibly, and the price from whichever shows the tag. They are not separate products, and you should return exactly one.`
-                  : "Identify this product and read the price tag if one is visible.",
-            },
-          ],
+    // Normal is 2-5s, so 10s means Google is degraded even though the call
+    // succeeded — the signal that was missing during the outage.
+    const response = await warnIfSlow("/api/identify", 10_000, () =>
+      ai.models.generateContent({
+        model: GEMINI_VISION_MODEL,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              ...parts,
+              {
+                text:
+                  parts.length > 1
+                    ? `These ${parts.length} photos are DIFFERENT VIEWS OF THE SAME single product — typically the product itself, its printed spec or price card, and possibly shop signage. Combine them: read the model number from whichever photo shows it legibly, and the price from whichever shows the tag. They are not separate products, and you should return exactly one.`
+                    : "Identify this product and read the price tag if one is visible.",
+              },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: "application/json",
+          responseSchema: IDENTITY_SCHEMA,
+          // Disable "thinking": this is a structured extraction task, and thinking
+          // tokens would otherwise eat the output budget and truncate the JSON.
+          thinkingConfig: { thinkingBudget: 0 },
+          // Raised from 1024 for the searchTerms description, which is longer prose
+          // than the other fields — a truncated reply loses the closing brace and
+          // fails to parse, so leave headroom.
+          maxOutputTokens: 2048,
+          temperature: 0.1,
+          abortSignal: AbortSignal.timeout(IDENTIFY_TIMEOUT_MS),
+          httpOptions: {
+            timeout: IDENTIFY_TIMEOUT_MS,
+            retryOptions: { attempts: 2 },
+          },
         },
-      ],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: "application/json",
-        responseSchema: IDENTITY_SCHEMA,
-        // Disable "thinking": this is a structured extraction task, and thinking
-        // tokens would otherwise eat the output budget and truncate the JSON.
-        thinkingConfig: { thinkingBudget: 0 },
-        // Raised from 1024 for the searchTerms description, which is longer prose
-        // than the other fields — a truncated reply loses the closing brace and
-        // fails to parse, so leave headroom.
-        maxOutputTokens: 2048,
-        temperature: 0.1,
-        abortSignal: AbortSignal.timeout(IDENTIFY_TIMEOUT_MS),
-        httpOptions: { timeout: IDENTIFY_TIMEOUT_MS, retryOptions: { attempts: 2 } },
-      },
-    });
+      }),
+    );
 
     if (response.promptFeedback?.blockReason) {
       return NextResponse.json(
-        { error: "The photo could not be analysed. Please try a different one." },
+        {
+          error: "The photo could not be analysed. Please try a different one.",
+        },
         { status: 422 },
       );
     }
@@ -240,7 +254,8 @@ export async function POST(req: NextRequest) {
     // a chain name like "Fortress" says nothing about location on its own.
     // "" means unknown and is treated as unknown everywhere downstream.
     const district =
-      districtFromText(product.locationHint) || districtFromText(product.storeName);
+      districtFromText(product.locationHint) ||
+      districtFromText(product.storeName);
 
     return NextResponse.json({ product, district });
   } catch (err) {
@@ -268,12 +283,18 @@ function parseIdentity(text: string): ProductIdentity | null {
   // A price of 0 is not a real tag price — treat it as "not legible".
   const price = (() => {
     if (o.tagPrice === null || o.tagPrice === undefined) return null;
-    const n = typeof o.tagPrice === "number" ? o.tagPrice : parseFloat(String(o.tagPrice));
+    const n =
+      typeof o.tagPrice === "number"
+        ? o.tagPrice
+        : parseFloat(String(o.tagPrice));
     return Number.isFinite(n) && n > 0 ? n : null;
   })();
 
   const confidence = (() => {
-    const n = typeof o.confidence === "number" ? o.confidence : parseFloat(String(o.confidence));
+    const n =
+      typeof o.confidence === "number"
+        ? o.confidence
+        : parseFloat(String(o.confidence));
     return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
   })();
 
@@ -281,10 +302,14 @@ function parseIdentity(text: string): ProductIdentity | null {
   // warn about a missing model. A wrong `false` hides the warning that exists to
   // stop the ASUS failure; a wrong 1 leaves the price as the sign showed it.
   const packQuantity = (() => {
-    const n = typeof o.packQuantity === "number" ? o.packQuantity : parseInt(String(o.packQuantity ?? ""), 10);
+    const n =
+      typeof o.packQuantity === "number"
+        ? o.packQuantity
+        : parseInt(String(o.packQuantity ?? ""), 10);
     return Number.isFinite(n) && n >= 1 && n <= 99 ? Math.floor(n) : 1;
   })();
-  const modelExpected = o.modelExpected === false || o.modelExpected === "false" ? false : true;
+  const modelExpected =
+    o.modelExpected === false || o.modelExpected === "false" ? false : true;
   // Fails closed: only an explicit true counts as read-off-a-label.
   const modelVerbatim = o.modelVerbatim === true || o.modelVerbatim === "true";
 
@@ -308,7 +333,8 @@ function parseIdentity(text: string): ProductIdentity | null {
     searchTerms: str(o.searchTerms),
     // Only an explicit true counts; a missing/malformed value means "one product"
     // and simply skips the crop nudge, which is the safe default.
-    multipleProducts: o.multipleProducts === true || o.multipleProducts === "true",
+    multipleProducts:
+      o.multipleProducts === true || o.multipleProducts === "true",
   };
 }
 
@@ -318,7 +344,11 @@ function parseIdentity(text: string): ProductIdentity | null {
  * thing to the shopper. Kept identical to /api/advice and /api/prices.
  */
 function isTimeout(err: unknown): boolean {
-  const e = err as { name?: unknown; message?: unknown; cause?: { code?: unknown } };
+  const e = err as {
+    name?: unknown;
+    message?: unknown;
+    cause?: { code?: unknown };
+  };
   const name = typeof e?.name === "string" ? e.name : "";
   const code = typeof e?.cause?.code === "string" ? e.cause.code : "";
   const message = typeof e?.message === "string" ? e.message.toLowerCase() : "";
@@ -339,7 +369,10 @@ function handleError(err: unknown) {
   if (isTimeout(err)) {
     console.warn("[/api/identify] timed out", err);
     return NextResponse.json(
-      { error: "Reading the photo took too long. Please try again.", code: "identify-timeout" },
+      {
+        error: "Reading the photo took too long. Please try again.",
+        code: "identify-timeout",
+      },
       { status: 504 },
     );
   }
@@ -349,7 +382,10 @@ function handleError(err: unknown) {
       : undefined;
   if (status === 429) {
     return NextResponse.json(
-      { error: "Rate limited by the AI service. Please wait a moment and retry." },
+      {
+        error:
+          "Rate limited by the AI service. Please wait a moment and retry.",
+      },
       { status: 429 },
     );
   }

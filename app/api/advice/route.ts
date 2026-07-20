@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GEMINI_MODEL, MissingApiKeyError, getGemini } from "@/lib/gemini";
+import {
+  GEMINI_MODEL,
+  MissingApiKeyError,
+  getGemini,
+  warnIfSlow,
+} from "@/lib/gemini";
 import { ownerId, requireUser } from "@/lib/session";
 import { consume, rateLimited } from "@/lib/rateLimit";
 import { PriceQuote } from "@/lib/types";
@@ -69,7 +74,8 @@ export async function POST(req: NextRequest) {
   }
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name) return NextResponse.json({ error: "Missing 'name'." }, { status: 400 });
+  if (!name)
+    return NextResponse.json({ error: "Missing 'name'." }, { status: 400 });
 
   const quotes = Array.isArray(body.quotes) ? body.quotes : [];
 
@@ -109,34 +115,40 @@ export async function POST(req: NextRequest) {
 
   try {
     const ai = getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Product: ${descriptor}\n${tag}\n\nPrices already found for this exact model:\n${listing}`,
-            },
-          ],
+    // Ungrounded reasoning over a short list; 12s is well past normal here.
+    const response = await warnIfSlow("/api/advice", 12_000, () =>
+      ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `Product: ${descriptor}\n${tag}\n\nPrices already found for this exact model:\n${listing}`,
+              },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          /**
+           * Thinking is left ON — weighing a warranty against a price difference
+           * is reasoning, not extraction — but thinking tokens are drawn from this
+           * same budget. At 1024 the advice came back truncated mid-sentence
+           * ("Parallel imports (水貨) are"), which is the trap the gotchas record
+           * for /api/identify. The visible answer is only a few hundred tokens;
+           * the rest of this is headroom for thinking.
+           */
+          maxOutputTokens: 4096,
+          temperature: 0.4,
+          abortSignal: AbortSignal.timeout(ADVICE_TIMEOUT_MS),
+          httpOptions: {
+            timeout: ADVICE_TIMEOUT_MS,
+            retryOptions: { attempts: 2 },
+          },
         },
-      ],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        /**
-         * Thinking is left ON — weighing a warranty against a price difference
-         * is reasoning, not extraction — but thinking tokens are drawn from this
-         * same budget. At 1024 the advice came back truncated mid-sentence
-         * ("Parallel imports (水貨) are"), which is the trap the gotchas record
-         * for /api/identify. The visible answer is only a few hundred tokens;
-         * the rest of this is headroom for thinking.
-         */
-        maxOutputTokens: 4096,
-        temperature: 0.4,
-        abortSignal: AbortSignal.timeout(ADVICE_TIMEOUT_MS),
-        httpOptions: { timeout: ADVICE_TIMEOUT_MS, retryOptions: { attempts: 2 } },
-      },
-    });
+      }),
+    );
 
     if (response.promptFeedback?.blockReason) {
       return NextResponse.json(
@@ -170,7 +182,11 @@ export async function POST(req: NextRequest) {
 }
 
 function isTimeout(err: unknown): boolean {
-  const e = err as { name?: unknown; message?: unknown; cause?: { code?: unknown } };
+  const e = err as {
+    name?: unknown;
+    message?: unknown;
+    cause?: { code?: unknown };
+  };
   const name = typeof e?.name === "string" ? e.name : "";
   const code = typeof e?.cause?.code === "string" ? e.cause.code : "";
   const message = typeof e?.message === "string" ? e.message.toLowerCase() : "";
@@ -191,7 +207,10 @@ function handleError(err: unknown) {
   if (isTimeout(err)) {
     console.warn("[/api/advice] timed out", err);
     return NextResponse.json(
-      { error: "Advice took too long. Please try again.", code: "advice-timeout" },
+      {
+        error: "Advice took too long. Please try again.",
+        code: "advice-timeout",
+      },
       { status: 504 },
     );
   }
@@ -201,7 +220,10 @@ function handleError(err: unknown) {
       : undefined;
   if (status === 429) {
     return NextResponse.json(
-      { error: "Rate limited by the AI service. Please wait a moment and retry." },
+      {
+        error:
+          "Rate limited by the AI service. Please wait a moment and retry.",
+      },
       { status: 429 },
     );
   }

@@ -43,6 +43,39 @@ export function getGemini(): GoogleGenAI {
   return client;
 }
 
+/**
+ * Times a Gemini call and warns when a SUCCESSFUL one was slow.
+ *
+ * The blind spot this fills: every route already logs failures, so an outage is
+ * visible, but a call that succeeds in 33s looks identical in the logs to one
+ * that succeeds in 3s. Through a whole evening of Google serving 11s
+ * identifications the app said nothing — the degradation was only found by
+ * timing probes by hand, outside the app.
+ *
+ * Deliberately does NOT log on failure: the timeout and error handlers in each
+ * route already do that, and a second line for the same event makes the log
+ * harder to read, not easier.
+ *
+ * It lives here rather than in a route because the same gap was fixed once in
+ * /api/prices and never carried to the sibling routes. One implementation, three
+ * call sites, no chance of them drifting apart again.
+ */
+export async function warnIfSlow<T>(
+  label: string,
+  slowMs: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  const started = Date.now();
+  const result = await run();
+  const ms = Date.now() - started;
+  if (ms > slowMs) {
+    console.warn(
+      `[${label}] slow Gemini call: ${(ms / 1000).toFixed(1)}s (over ${slowMs / 1000}s)`,
+    );
+  }
+  return result;
+}
+
 export class MissingApiKeyError extends Error {
   constructor() {
     super(
