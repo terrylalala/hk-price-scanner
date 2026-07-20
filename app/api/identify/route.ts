@@ -10,6 +10,24 @@ export const runtime = "nodejs";
 // Vision on a high-resolution photo can take a few seconds.
 export const maxDuration = 60;
 
+/**
+ * Deadline for the vision call, matching the pattern in /api/prices and
+ * /api/advice — this route was the only Gemini call without one, so when Google
+ * degraded it hung until the platform killed the function and the shopper got an
+ * opaque failure a full minute later instead of a clean "try again".
+ *
+ * 30s is deliberately far above the 2–5s this normally takes. The bound exists
+ * to convert a dead minute into a retry, not to police ordinary slowness: a
+ * three-photo upload on shop wifi is legitimately slower than one, and cutting
+ * that off would fail scans that were about to succeed.
+ *
+ * Both settings are needed and they are not the same mechanism — see the note in
+ * /api/prices. Briefly: `abortSignal` is the authoritative client-side bound and
+ * cannot be out-waited by the SDK's retries, while `httpOptions.timeout` is a
+ * server-side deadline with a 10s minimum.
+ */
+const IDENTIFY_TIMEOUT_MS = 30_000;
+
 const ALLOWED_MEDIA_TYPES = [
   "image/jpeg",
   "image/png",
@@ -198,6 +216,8 @@ export async function POST(req: NextRequest) {
         // fails to parse, so leave headroom.
         maxOutputTokens: 2048,
         temperature: 0.1,
+        abortSignal: AbortSignal.timeout(IDENTIFY_TIMEOUT_MS),
+        httpOptions: { timeout: IDENTIFY_TIMEOUT_MS, retryOptions: { attempts: 2 } },
       },
     });
 
@@ -292,9 +312,36 @@ function parseIdentity(text: string): ProductIdentity | null {
   };
 }
 
+/**
+ * A timeout arrives under several names depending on where it fired — the abort
+ * signal, the socket, or the SDK's own fetch — and all of them mean the same
+ * thing to the shopper. Kept identical to /api/advice and /api/prices.
+ */
+function isTimeout(err: unknown): boolean {
+  const e = err as { name?: unknown; message?: unknown; cause?: { code?: unknown } };
+  const name = typeof e?.name === "string" ? e.name : "";
+  const code = typeof e?.cause?.code === "string" ? e.cause.code : "";
+  const message = typeof e?.message === "string" ? e.message.toLowerCase() : "";
+  return (
+    name === "TimeoutError" ||
+    name === "AbortError" ||
+    code === "UND_ERR_SOCKET" ||
+    message.includes("aborted") ||
+    message.includes("timeout") ||
+    message.includes("fetch failed")
+  );
+}
+
 function handleError(err: unknown) {
   if (err instanceof MissingApiKeyError) {
     return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+  if (isTimeout(err)) {
+    console.warn("[/api/identify] timed out", err);
+    return NextResponse.json(
+      { error: "Reading the photo took too long. Please try again.", code: "identify-timeout" },
+      { status: 504 },
+    );
   }
   const status =
     typeof (err as { status?: unknown })?.status === "number"
