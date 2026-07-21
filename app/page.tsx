@@ -188,6 +188,21 @@ export default function Home() {
     setRestored(true);
   }, []);
 
+  // Wake the database while the user is still on the camera screen.
+  //
+  // Neon's free tier suspends compute after ~5 minutes idle, and the wake costs
+  // ~2s — paid by whatever query runs first, which is normally the History list.
+  // Firing it here does not avoid the wake, it just spends it somewhere the user
+  // is not waiting on it.
+  //
+  // Fire-and-forget on purpose: nothing renders from it, a failure is harmless
+  // (the real query wakes the database by itself, as before), and it must never
+  // delay the camera. Once per mount — a session that never opens History has
+  // still almost certainly saved a scan, which needs the database anyway.
+  useEffect(() => {
+    void fetch("/api/warm", { method: "POST", keepalive: true }).catch(() => {});
+  }, []);
+
   // Persist after the restore pass, never before: writing on the first render
   // would clobber the saved scan with the empty initial state.
   useEffect(() => {
@@ -345,6 +360,13 @@ export default function Home() {
           // The vision step's rich visual description, used only by a similar
           // search to match on more than a bare name. See ProductIdentity.
           searchTerms: identity?.searchTerms ?? "",
+          // The photo itself, so a similar search can match on how the thing
+          // LOOKS and not only on the words describing it. photos[0] is the
+          // crop when one was drawn, which is the tighter and better frame —
+          // cropping improves this but is not required for it.
+          //
+          // Sent in similar mode only, matching the server, so an exact search
+          // does not pay to upload a photo it will ignore.
         }),
       });
       const data = await res.json();
