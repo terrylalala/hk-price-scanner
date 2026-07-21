@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GEMINI_MODEL, MissingApiKeyError, getGemini } from "@/lib/gemini";
+import {
+  GEMINI_MODEL,
+  MissingApiKeyError,
+  getGemini,
+  warnIfSlow,
+} from "@/lib/gemini";
 import { ownerId, requireUser } from "@/lib/session";
 import { consume, rateLimited } from "@/lib/rateLimit";
 import { districtFromText } from "@/lib/hkDistricts";
@@ -171,6 +176,42 @@ interface Body {
    * searches on the model. See ProductIdentity.searchTerms.
    */
   searchTerms?: string;
+  /**
+   * The photo of the item, base64 JPEG with no data: prefix. SIMILAR MODE ONLY.
+   *
+   * A similar search previously threw the photo away and shopped on words alone,
+   * so a distinctive jacket and a generic one searched identically. Passing the
+   * frame into the same grounded call lets the pattern, cut and hardware reach
+   * the search rather than only this route's sentence about them.
+   *
+   * Deliberately not used in exact mode: there the model number is far stronger
+   * evidence than pixels, and inviting the model to weigh a blurry shelf shot
+   * against a confirmed model number could only make a working path worse.
+   */
+  photoBase64?: string;
+}
+
+/**
+ * ~3MB of base64. The client sends its 1600px version, an order of magnitude
+ * under this; the bound exists so a malformed or oversized body cannot push the
+ * request past the API's own limit and turn a search into an opaque 400.
+ */
+const MAX_IMAGE_BASE64 = 3_000_000;
+
+/**
+ * The image part for the search, or null to search on text alone.
+ *
+ * Every rejection here is silent and non-fatal by design: the text search is
+ * fully functional on its own, so an absent, oversized or malformed photo must
+ * degrade to the previous behaviour rather than fail a billed search.
+ */
+function imagePart(body: Body, mode: SearchMode) {
+  if (mode !== "similar") return null;
+  const raw = typeof body.photoBase64 === "string" ? body.photoBase64 : "";
+  if (!raw) return null;
+  const data = raw.includes(",") ? raw.slice(raw.indexOf(",") + 1) : raw;
+  if (!data || data.length > MAX_IMAGE_BASE64) return null;
+  return { inlineData: { mimeType: "image/jpeg", data } };
 }
 
 export async function POST(req: NextRequest) {
@@ -235,47 +276,66 @@ export async function POST(req: NextRequest) {
   // Tagged → compare locally; untagged spotted item → let it shop internationally.
   const similarScope: "local" | "global" = hasTag ? "local" : "global";
 
+  // Image first, then the text that refers to it — the ordering the API expects
+  // when a prompt is about an accompanying image.
+  const image = imagePart(body, mode);
+
+  // Without this the photo can be treated as decoration and the model shops on
+  // the words alone, which is the behaviour we are trying to improve on. It also
+  // states the priority explicitly: the picture is the item, the words describe
+  // it, and where they disagree the picture is right.
+  const photoNote = image
+    ? "\n\nThe photo above is the item they saw. Search for what is actually in it — the cut, pattern, materials and details you can see — and treat it as the truth wherever the written description is vaguer or disagrees. Do not describe the photo back; use it to choose what to search for."
+    : "";
+
   const userText =
     mode === "similar"
       ? `The shopper saw and liked: ${similarQuery}${
           typeof body.category === "string" && body.category.trim()
             ? ` (${body.category.trim()})`
             : ""
-        }\n\n${
+        }${photoNote}\n\n${
           similarScope === "local"
             ? "Find items on sale in Hong Kong now that are close to this, so they can compare against it locally."
             : "Find items they can buy from Hong Kong now that are close to this — local stores, or international stores that ship here."
         }`
       : `Find current Hong Kong retail prices for: ${descriptor}${askedPrice}`;
 
+  const parts = image ? [image, { text: userText }] : [{ text: userText }];
+
   try {
     const ai = getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userText }],
+    // Grounded search is legitimately slow — successes span 24-49s — so the
+    // threshold sits just under the abort. Crossing it means the next such
+    // search will probably time out rather than return.
+    const response = await warnIfSlow("/api/prices", 45_000, () =>
+      ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          {
+            role: "user",
+            parts,
+          },
+        ],
+        config: {
+          systemInstruction:
+            mode === "similar" ? similarPrompt(similarScope) : SYSTEM_PROMPT,
+          tools: [{ googleSearch: {} }],
+          // Thinking left ON deliberately — see the header comment. Disabling it
+          // saved ~10s but weakened grounding (lost citations, homepage-only links,
+          // and no terms-required Search Suggestions), which is not worth the time.
+          // Generous: thinking tokens draw from this budget too, and a truncated
+          // reply loses the JSON block while still looking plausible in prose.
+          maxOutputTokens: 8192,
+          temperature: 0.2,
+          abortSignal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+          httpOptions: {
+            timeout: SEARCH_TIMEOUT_MS,
+            retryOptions: { attempts: SEARCH_ATTEMPTS },
+          },
         },
-      ],
-      config: {
-        systemInstruction:
-          mode === "similar" ? similarPrompt(similarScope) : SYSTEM_PROMPT,
-        tools: [{ googleSearch: {} }],
-        // Thinking left ON deliberately — see the header comment. Disabling it
-        // saved ~10s but weakened grounding (lost citations, homepage-only links,
-        // and no terms-required Search Suggestions), which is not worth the time.
-        // Generous: thinking tokens draw from this budget too, and a truncated
-        // reply loses the JSON block while still looking plausible in prose.
-        maxOutputTokens: 8192,
-        temperature: 0.2,
-        abortSignal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-        httpOptions: {
-          timeout: SEARCH_TIMEOUT_MS,
-          retryOptions: { attempts: SEARCH_ATTEMPTS },
-        },
-      },
-    });
+      }),
+    );
 
     if (response.promptFeedback?.blockReason) {
       return NextResponse.json(
@@ -361,7 +421,10 @@ function hostOf(url: string): string {
  * and following 8 of them would cost 8 HTTP round trips inside the 50s search
  * budget that successful searches already consume 46–48s of.
  */
-function withBestLinks(quotes: PriceQuote[], citations: Citation[]): PriceQuote[] {
+function withBestLinks(
+  quotes: PriceQuote[],
+  citations: Citation[],
+): PriceQuote[] {
   if (citations.length === 0) return quotes;
 
   // Key by TITLE, not by URL host. Every citation URL is a
@@ -370,8 +433,12 @@ function withBestLinks(quotes: PriceQuote[], citations: Citation[]): PriceQuote[
   // domain in the title ("yohohongkong.com"), which is the only usable key.
   const byHost = new Map<string, string>();
   for (const c of citations) {
-    const host = c.title.trim().toLowerCase().replace(/^www\./, "");
-    if (host && host.includes(".") && !byHost.has(host)) byHost.set(host, c.url);
+    const host = c.title
+      .trim()
+      .toLowerCase()
+      .replace(/^www\./, "");
+    if (host && host.includes(".") && !byHost.has(host))
+      byHost.set(host, c.url);
   }
 
   // No URL-shape test here any more, deliberately. A fabricated product URL is
@@ -454,7 +521,8 @@ interface GroundingChunk {
 }
 
 function extractCitations(meta: unknown): Citation[] {
-  const chunks = (meta as { groundingChunks?: GroundingChunk[] })?.groundingChunks;
+  const chunks = (meta as { groundingChunks?: GroundingChunk[] })
+    ?.groundingChunks;
   if (!Array.isArray(chunks)) return [];
 
   const seen = new Set<string>();
@@ -478,7 +546,11 @@ function extractCitations(meta: unknown): Citation[] {
  * verbatim usually fails again, whereas a narrower product name usually works.
  */
 function isTimeout(err: unknown): boolean {
-  const e = err as { name?: unknown; message?: unknown; cause?: { code?: unknown } };
+  const e = err as {
+    name?: unknown;
+    message?: unknown;
+    cause?: { code?: unknown };
+  };
   const name = typeof e?.name === "string" ? e.name : "";
   const message = typeof e?.message === "string" ? e.message.toLowerCase() : "";
   const code = typeof e?.cause?.code === "string" ? e.cause.code : "";
@@ -505,8 +577,14 @@ function handleError(err: unknown) {
     console.warn("[/api/prices] search timed out or connection dropped", err);
     return NextResponse.json(
       {
+        /**
+         * Reworded 21 July. The old text promised "searching again often works",
+         * which is true when a single search is unlucky and false when Google is
+         * degraded for days — as it was. Advice that confidently fails twice is
+         * worse than no advice, so this now names both possibilities instead.
+         */
         error:
-          "The price search took too long and was stopped. Searching again often works — successful searches run close to the time limit, so a slow one is frequently just unlucky. If it keeps timing out, a more specific product name searches faster.",
+          "The price search took too long and was stopped. One retry is worth trying — searches normally finish close to the time limit. If it fails again, Google's search service is likely having problems, and it is worth waiting rather than retrying.",
         code: "search-timeout",
       },
       { status: 504 },
@@ -519,13 +597,38 @@ function handleError(err: unknown) {
       : undefined;
   if (status === 429) {
     return NextResponse.json(
-      { error: "Rate limited by the AI service. Please wait a moment and retry." },
+      {
+        error:
+          "Too many searches in a short time. Wait a minute, then try again.",
+      },
       { status: 429 },
+    );
+  }
+  /**
+   * 503 is Google saying its own capacity is short — "this model is currently
+   * experiencing high demand". Named separately from the generic branch because
+   * it is the one failure here that is definitely NOT the app's fault, and the
+   * old wording ("the search service returned an error") read as if the app had
+   * broken. During the 20-21 July degradation this was the message a shopper
+   * actually saw, and it told them nothing useful about whether to wait or retry.
+   */
+  if (status === 503) {
+    console.warn("[/api/prices] Google reported 503 capacity shortage", err);
+    return NextResponse.json(
+      {
+        error:
+          "Google's search service is overloaded right now. This is on their side, not the app — please try again later.",
+        code: "search-unavailable",
+      },
+      { status: 503 },
     );
   }
   if (status && status >= 400 && status < 600) {
     return NextResponse.json(
-      { error: "The search service returned an error. Please try again." },
+      {
+        error:
+          "The price search could not be completed. Please try again in a moment.",
+      },
       { status },
     );
   }
