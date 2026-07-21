@@ -728,6 +728,23 @@ a {
   border-top: 1px solid var(--line-strong);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   z-index: 20;
+
+  /* iOS repositions position:fixed elements only when a scroll ENDS, not
+     continuously through the gesture. Scrolling down hides this — the bar is
+     already at the bottom — but scrolling up leaves it behind, so it visibly
+     drifts to mid-screen and snaps back at the end. Reported on the Home Screen
+     PWA; a desktop browser cannot reproduce it, and measuring the bar at rest
+     shows it correctly pinned, so this looks like a non-bug from every angle
+     except a real iPhone.
+
+     Promoting the bar to its own compositing layer lets the compositor keep it
+     pinned for the whole gesture instead of re-laying it out afterwards.
+
+     translateZ(0) on the bar ITSELF is safe: a transform establishes a
+     containing block for a fixed DESCENDANT, not for the transformed element's
+     own fixed positioning. Do not move this onto an ancestor — there it would
+     break `bottom: 0` outright. */
+  transform: translateZ(0);
 }
 
 .tabbar-inner {
