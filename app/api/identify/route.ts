@@ -216,9 +216,21 @@ export async function POST(req: NextRequest) {
           systemInstruction: SYSTEM_PROMPT,
           responseMimeType: "application/json",
           responseSchema: IDENTITY_SCHEMA,
-          // Disable "thinking": this is a structured extraction task, and thinking
-          // tokens would otherwise eat the output budget and truncate the JSON.
-          thinkingConfig: { thinkingBudget: 0 },
+          // No thinkingConfig, deliberately. This was `{ thinkingBudget: 0 }` to
+          // stop thinking tokens eating the output budget and truncating the
+          // JSON — but on 2026-07-22 Google began REJECTING a zero budget
+          // outright: every request returned HTTP 400 INVALID_ARGUMENT, on both
+          // gemini-flash-lite-latest and gemini-flash-latest, reproducibly. That
+          // took the whole identify step down, since a 400 here means no scan
+          // can be read at all.
+          //
+          // Omitting the field is the fix rather than picking a new number:
+          // measured on this model, the default already spends ZERO thinking
+          // tokens (usageMetadata.thoughtsTokenCount === 0) and finishes in
+          // ~2s with valid JSON, so the original intent is preserved for free.
+          // Do NOT "restore" it as `{ thinkingBudget: -1 }`: that means AUTO,
+          // which measured 5.5s and ~1100 thinking tokens against the 2048
+          // budget — the exact truncation risk this comment used to guard.
           // Raised from 1024 for the searchTerms description, which is longer prose
           // than the other fields — a truncated reply loses the closing brace and
           // fails to parse, so leave headroom.
