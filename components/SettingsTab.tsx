@@ -181,6 +181,118 @@ function UsagePanel() {
   );
 }
 
+interface SerpApiUsage {
+  configured: boolean;
+  planName?: string;
+  monthlyPriceUsd?: number;
+  searchesPerMonth?: number;
+  used?: number;
+  planSearchesLeft?: number;
+  extraCredits?: number;
+  renewalDate?: string;
+  error?: string;
+}
+
+/**
+ * The SerpApi (Google Lens) monthly allowance.
+ *
+ * A separate card from Gemini usage rather than a row inside it, because the
+ * two numbers are not the same KIND of number and merging them would imply a
+ * confidence the Gemini figure does not have: that one is an estimate from this
+ * app's own counters, this one is reported by the provider. Saying "245 left"
+ * next to "about 1,200 queries, estimated" in one table would flatten that
+ * distinction.
+ *
+ * Renders nothing at all when SERPAPI_KEY is unset, which is every environment
+ * where visual search has not been set up. An empty card explaining a feature
+ * that does not exist is worse than no card.
+ */
+function SerpApiPanel() {
+  const [data, setData] = useState<SerpApiUsage | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/serpapi-usage");
+        const body = await res.json();
+        setData(body);
+      } catch {
+        setData({ configured: true, error: "SerpApi could not be reached." });
+      }
+    })();
+  }, []);
+
+  // Still loading, or deliberately absent — say nothing either way.
+  if (!data || !data.configured) return null;
+
+  if (data.error) {
+    return (
+      <div className="card">
+        <h2>Visual search allowance</h2>
+        <p className="note" style={{ marginTop: 6 }}>
+          Could not reach SerpApi to read the allowance. This does not affect
+          scanning or price search.
+        </p>
+      </div>
+    );
+  }
+
+  const total = data.searchesPerMonth ?? 0;
+  const used = data.used ?? 0;
+  const left = data.planSearchesLeft ?? 0;
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  const free = (data.monthlyPriceUsd ?? 0) === 0;
+
+  return (
+    <div className="card">
+      <h2>Visual search allowance</h2>
+
+      <p className="note" style={{ marginTop: 6 }}>
+        This month: <strong>{used.toLocaleString()}</strong> of{" "}
+        {total.toLocaleString()} searches used on the{" "}
+        <strong>{data.planName}</strong>
+        {data.renewalDate ? <> — resets {data.renewalDate}</> : null}.
+      </p>
+
+      <div className="meter" style={{ marginTop: 8 }}>
+        <div className="meter-fill" style={{ width: `${pct}%` }} />
+      </div>
+
+      <p className="note" style={{ marginTop: 8 }}>
+        <strong>{left.toLocaleString()}</strong> left
+        {(data.extraCredits ?? 0) > 0 ? (
+          <>
+            , plus {(data.extraCredits ?? 0).toLocaleString()} extra credits
+          </>
+        ) : null}
+        .
+      </p>
+
+      {/*
+        The reassurance that matters, and it is a fact about the plan rather
+        than a promise: on the free plan there is no card and no extra credits,
+        so SerpApi has no mechanism to bill past the cap — requests simply start
+        failing. Stated only when it is actually true, since a paid plan CAN
+        bill, and the same sentence there would be a lie.
+      */}
+      <p className="note" style={{ marginTop: 6, opacity: 0.75 }}>
+        {free && (data.extraCredits ?? 0) === 0 ? (
+          <>
+            Reported by SerpApi, not estimated. On the free plan there is
+            nothing to bill against, so going over stops the searches rather
+            than charging you.
+          </>
+        ) : (
+          <>
+            Reported by SerpApi, not estimated. This is a paid plan — searches
+            beyond the allowance may be charged.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
 export default function SettingsTab() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [persisted, setPersisted] = useState(true);
@@ -279,6 +391,7 @@ export default function SettingsTab() {
       </div>
 
       <UsagePanel />
+      <SerpApiPanel />
     </div>
   );
 }
