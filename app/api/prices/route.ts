@@ -8,7 +8,11 @@ import {
 import { ownerId, requireUser } from "@/lib/session";
 import { consume, rateLimited } from "@/lib/rateLimit";
 import { districtFromText } from "@/lib/hkDistricts";
-import { hostOf, withStoreSearchFallback } from "@/lib/storeLinks";
+import {
+  hostOf,
+  withStoreSearchFallback,
+  withUngroundedSearchLinks,
+} from "@/lib/storeLinks";
 import { Citation, PriceQuote } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -418,14 +422,18 @@ export async function POST(req: NextRequest) {
     }
 
     const citations = extractCitations(meta);
-    // Upgrade any bare-home-page fallback to the store's own search for the item.
     // The query is what the shopper is after: the rich description in similar
     // mode, the model/name in exact mode.
     const linkQuery = mode === "similar" ? similarQuery : descriptor;
-    const quotes = withStoreSearchFallback(
-      withBestLinks(parseQuotes(text), citations),
-      linkQuery,
-    );
+    const parsed = parseQuotes(text);
+    // Grounded results get verified/upgraded links (citations win, then a
+    // bare-home-page fallback becomes the store's own search). Ungrounded results
+    // are pure model memory, so their guessed links — which routinely 404 — are
+    // swapped for a Google search that actually lands somewhere. `meta` is the
+    // same grounded signal the client shows as the "from memory" warning.
+    const quotes = meta
+      ? withStoreSearchFallback(withBestLinks(parsed, citations), linkQuery)
+      : withUngroundedSearchLinks(parsed, linkQuery);
 
     return NextResponse.json({
       summary: stripJsonBlock(text),

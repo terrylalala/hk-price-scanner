@@ -73,3 +73,35 @@ export function withStoreSearchFallback(
     return search ? { ...q, url: search } : q;
   });
 }
+
+/** A Google search URL for `query`, or null when the query is empty. */
+export function googleSearchUrl(query: string): string | null {
+  const q = encodeURIComponent(query.trim());
+  return q ? `https://www.google.com/search?q=${q}` : null;
+}
+
+/**
+ * On an UNGROUNDED result every quote — price, store and link alike — is the
+ * model's memory, and the links are guesses that frequently 404. Rather than
+ * send the shopper to a dead page, point each link at a Google search for the
+ * item, plus the store the model named (a real store then narrows the search; a
+ * made-up one is simply ignored). The prices already carry the "from memory"
+ * warning; this makes the one tappable thing actually land somewhere real.
+ *
+ * Applied ONLY to ungrounded results — grounded quotes have verified/citation
+ * links and must never be downgraded to a search. A quote with neither an item
+ * query nor a store name is left as-is (nothing better to search for).
+ */
+export function withUngroundedSearchLinks(
+  quotes: PriceQuote[],
+  itemQuery: string,
+): PriceQuote[] {
+  return quotes.map((q) => {
+    const terms = [itemQuery, q.store]
+      .map((s) => (s ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const url = googleSearchUrl(terms);
+    return url ? { ...q, url } : q;
+  });
+}
