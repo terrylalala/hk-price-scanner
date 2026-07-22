@@ -8,6 +8,7 @@ import {
 import { ownerId, requireUser } from "@/lib/session";
 import { consume, rateLimited } from "@/lib/rateLimit";
 import { districtFromText } from "@/lib/hkDistricts";
+import { hostOf, withStoreSearchFallback } from "@/lib/storeLinks";
 import { Citation, PriceQuote } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -417,7 +418,14 @@ export async function POST(req: NextRequest) {
     }
 
     const citations = extractCitations(meta);
-    const quotes = withBestLinks(parseQuotes(text), citations);
+    // Upgrade any bare-home-page fallback to the store's own search for the item.
+    // The query is what the shopper is after: the rich description in similar
+    // mode, the model/name in exact mode.
+    const linkQuery = mode === "similar" ? similarQuery : descriptor;
+    const quotes = withStoreSearchFallback(
+      withBestLinks(parseQuotes(text), citations),
+      linkQuery,
+    );
 
     return NextResponse.json({
       summary: stripJsonBlock(text),
@@ -434,15 +442,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     return handleError(err);
-  }
-}
-
-/** Registrable-ish host, lowercased and stripped of "www.". "" when unparseable. */
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
-  } catch {
-    return "";
   }
 }
 
