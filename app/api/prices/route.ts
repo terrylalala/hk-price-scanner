@@ -47,6 +47,26 @@ const SEARCH_TIMEOUT_MS = 50_000;
 const SEARCH_ATTEMPTS = 2;
 
 /**
+ * Budget for retrying an ungrounded SIMILAR search (see the retry block in POST).
+ * Two searches must fit inside maxDuration (60s), so the pair is capped a little
+ * under it. The retry only runs when at least RETRY_MIN_MS of that budget remains,
+ * because a grounded search needs ~15-25s and starting one with less time left
+ * would just abort mid-flight and waste the call.
+ *
+ * Why retry at all: measured over 46 trials on 2026-07-22/23, ~60% of no-tag
+ * similar searches come back ungrounded — the model answered from memory instead
+ * of searching — and grounding is partly independent across attempts, so a second
+ * try recovers ~36% of those misses. Net effect: the useful-answer rate rises
+ * from ~40% to ~60%. Recovery is modest and time-correlated (individual windows
+ * ranged 0% to 55%; only the pooled ~36% is reliable), but the misses are the
+ * FAST runs (~15-20s), which is what makes a second call affordable inside the
+ * wall, and correctness is untouched — a miss that does not recover still shows
+ * the honest "from memory" warning, so this only ever ADDS real answers.
+ */
+const RETRY_BUDGET_MS = 55_000;
+const RETRY_MIN_MS = 20_000;
+
+/**
  * Find current Hong Kong prices for a product using Grounding with Google Search.
  *
  * Deliberately NOT using responseMimeType/responseSchema. Structured output and
@@ -305,10 +325,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const ai = getGemini();
-    // Grounded search is legitimately slow — successes span 24-49s — so the
-    // threshold sits just under the abort. Crossing it means the next such
-    // search will probably time out rather than return.
-    const response = await warnIfSlow("/api/prices", 45_000, () =>
+    // One search call, parameterised by the time it is allowed to take so the
+    // retry below can hand the second attempt only the budget that is left.
+    const runSearch = (timeoutMs: number) =>
       ai.models.generateContent({
         model: GEMINI_MODEL,
         contents: [
@@ -328,13 +347,20 @@ export async function POST(req: NextRequest) {
           // reply loses the JSON block while still looking plausible in prose.
           maxOutputTokens: 8192,
           temperature: 0.2,
-          abortSignal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+          abortSignal: AbortSignal.timeout(timeoutMs),
           httpOptions: {
-            timeout: SEARCH_TIMEOUT_MS,
+            timeout: timeoutMs,
             retryOptions: { attempts: SEARCH_ATTEMPTS },
           },
         },
-      }),
+      });
+
+    const startedAt = Date.now();
+    // Grounded search is legitimately slow — successes span 24-49s — so the
+    // threshold sits just under the abort. Crossing it means the next such
+    // search will probably time out rather than return.
+    let response = await warnIfSlow("/api/prices", 45_000, () =>
+      runSearch(SEARCH_TIMEOUT_MS),
     );
 
     if (response.promptFeedback?.blockReason) {
@@ -344,8 +370,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let meta = response.candidates?.[0]?.groundingMetadata;
+
+    // Retry ONCE when a similar search comes back ungrounded — i.e. the model
+    // answered from memory instead of searching (no grounding metadata). See
+    // RETRY_BUDGET_MS for the measured justification. Budget-gated so the two
+    // calls together can never cross the 60s wall: only retry with the time that
+    // is actually left, and only if enough of it remains to finish a search.
+    // Exact mode is left alone — it grounds reliably and rarely needs this.
+    if (!meta && mode === "similar") {
+      const remainingMs = RETRY_BUDGET_MS - (Date.now() - startedAt);
+      if (remainingMs >= RETRY_MIN_MS) {
+        const retry = await runSearch(remainingMs);
+        const retryMeta = retry.candidates?.[0]?.groundingMetadata;
+        // Adopt the retry only if it actually grounded and was not blocked; a
+        // second ungrounded answer is no better than the first, so in that case
+        // keep the original response and let the honest "from memory" path run.
+        if (retryMeta && !retry.promptFeedback?.blockReason) {
+          response = retry;
+          meta = retryMeta;
+        }
+        // Observability: how often the retry fires and whether it recovers is the
+        // whole case for this feature, so make it visible in the logs.
+        console.log(
+          `[/api/prices] ungrounded ${similarScope} similar search retried — ${
+            meta ? "recovered" : "still ungrounded"
+          }`,
+        );
+      } else {
+        console.warn(
+          `[/api/prices] ungrounded ${similarScope} similar search, only ${remainingMs}ms left — skipped retry`,
+        );
+      }
+    }
+
     const text = response.text ?? "";
-    const meta = response.candidates?.[0]?.groundingMetadata;
 
     // Truncation here is silent and costly: the prose still looks fine while
     // the machine-readable block is missing, so log it loudly.
